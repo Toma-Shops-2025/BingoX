@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #050515;
+  color: white;
+  overflow: hidden;
+  user-select: none;
+}
+
+@layer utilities {
+  .shadow-glow {
+    box-shadow: 0 0 20px rgba(255, 69, 0, 0.4), 0 0 40px rgba(255, 69, 0, 0.2);
+  }
+
+  .animate-float-slow {
+    animation: float 30s ease-in-out infinite;
+  }
+}
+
+@keyframes float {
+  0% { transform: translate(-5vw, -5vh) rotate(0deg); }
+  33% { transform: translate(5vw, 5vh) rotate(10deg); }
+  66% { transform: translate(-2vw, 10vh) rotate(-5deg); }
+  100% { transform: translate(-5vw, -5vh) rotate(0deg); }
+}
