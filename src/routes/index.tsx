@@ -66,6 +66,7 @@ export default function BingoXGame() {
     const [username, setUsername] = useState('')
     const [isLogin, setIsLogin] = useState(true)
     const [showPass, setShowPass] = useState(false)
+    const [agreed, setAgreed] = useState(false)
 
     const bgmRef = useRef<HTMLAudioElement | null>(null)
     const currentTrackRef = useRef<string>("")
@@ -390,12 +391,14 @@ export default function BingoXGame() {
                 <img src="logo.png" className="w-48 h-48 mb-6 drop-shadow-glow animate-in zoom-in duration-700" alt="Bingo X Logo" />
                 <h1 className="text-5xl font-black italic mb-2 text-primary tracking-tighter shadow-glow uppercase text-center leading-none">Bingo X</h1>
                 <p className="text-white/40 uppercase tracking-[0.4em] text-[9px] mb-12 font-bold text-center">Skill Edition</p>
-                <form onSubmit={(e) => { e.preventDefault(); isLogin ? signIn(email, password) : signUp(email, password, username); }} className="w-full max-w-sm space-y-3">
+                <form onSubmit={(e) => { e.preventDefault(); if (!isLogin && !agreed) return toast.error("Please agree to the terms."); isLogin ? signIn(email, password) : signUp(email, password, username); }} className="w-full max-w-sm space-y-3">
                     {!isLogin && (
-                        <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4 focus-within:border-primary/50 transition-colors">
-                            <UserIcon className="h-5 w-5 text-white/20 mr-3" />
-                            <input type="text" placeholder="Username" className="bg-transparent outline-none w-full font-bold text-white" value={username} onChange={e => setUsername(e.target.value)} required />
-                        </div>
+                        <>
+                            <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4 focus-within:border-primary/50 transition-colors">
+                                <UserIcon className="h-5 w-5 text-white/20 mr-3" />
+                                <input type="text" placeholder="Username" className="bg-transparent outline-none w-full font-bold text-white" value={username} onChange={e => setUsername(e.target.value)} required />
+                            </div>
+                        </>
                     )}
                     <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4 focus-within:border-primary/50 transition-colors">
                         <Mail className="h-5 w-5 text-white/20 mr-3" />
@@ -406,6 +409,12 @@ export default function BingoXGame() {
                         <input type={showPass ? "text" : "password"} placeholder="Password" name="password" className="bg-transparent outline-none w-full font-bold text-white" value={password} onChange={e => setPassword(e.target.value)} required />
                         <button type="button" onClick={() => setShowPass(!showPass)}>{showPass ? <EyeOff className="h-4 w-4 opacity-30" /> : <Eye className="h-4 w-4 opacity-30" />}</button>
                     </div>
+                    {!isLogin && (
+                        <div className="flex items-center gap-3 px-2 py-2">
+                            <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="accent-primary" />
+                            <span className="text-[10px] text-white/40 font-bold uppercase">I am 18+ and agree to Terms</span>
+                        </div>
+                    )}
                     <button type="submit" className="w-full bg-primary py-5 rounded-3xl font-black uppercase tracking-widest shadow-glow mt-4 active:scale-95 transition-transform">{isLogin ? 'Login' : 'Create Account'}</button>
                     <button type="button" onClick={() => setIsLogin(!isLogin)} className="w-full text-center text-xs opacity-40 font-bold uppercase mt-4 underline">{isLogin ? "New? Sign up" : "Have an account? Login"}</button>
                 </form>
