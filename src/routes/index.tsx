@@ -146,12 +146,13 @@ export default function BingoXGame() {
             const newBoard = [...board];
             const newlyCalled: number[] = [];
 
-            // Pick 3 random numbers on the board that haven't been called yet
+            // Pick 3 random numbers on the board that haven't been called OR marked yet
             const availableOnBoard: {r: number, c: number, num: number}[] = [];
             for (let r = 0; r < 5; r++) {
                 for (let c = 0; c < 5; c++) {
                     const cell = newBoard[r][c];
-                    if (cell.number !== "FREE" && !calledNumbers.includes(cell.number as number)) {
+                    // We only want numbers that are NOT marked AND NOT already in calledNumbers
+                    if (cell.number !== "FREE" && !cell.marked && !calledNumbers.includes(cell.number as number)) {
                         availableOnBoard.push({r, c, num: cell.number as number});
                     }
                 }
@@ -168,7 +169,12 @@ export default function BingoXGame() {
             setCalledNumbers(prev => [...newlyCalled, ...prev]);
             setBoard(newBoard);
             setSessionScore(prev => prev + 2000);
-            toast.success(`Lucky Daub! Called: ${newlyCalled.join(', ')}`, { icon: '✨' });
+
+            if (newlyCalled.length > 0) {
+                toast.success(`Lucky Daub! Matched: ${newlyCalled.join(', ')}`, { icon: '✨' });
+            } else {
+                toast.success("Lucky Daub! +2,000 JS Bonus", { icon: '✨' });
+            }
 
             // Force a win check immediately
             const winResult = BingoEngine.checkWins(newBoard);
