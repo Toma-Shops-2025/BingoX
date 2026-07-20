@@ -4,10 +4,14 @@
 $ProjectPath  = "$env:USERPROFILE\Desktop\bingo-x"
 $KeystorePath = "C:\Keys\bingo-x.jks"
 $KeyAlias     = "alias"
+$ApkPath      = "$ProjectPath\android\app\build\outputs\apk\release\app-release.apk"
 
 $ErrorActionPreference = "Stop"
 
 function Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
+
+Step "Cleaning old build files..."
+if (Test-Path $ApkPath) { Remove-Item $ApkPath -Force }
 
 Step "Switching to project: $ProjectPath"
 Set-Location $ProjectPath
@@ -32,6 +36,9 @@ if ([string]::IsNullOrEmpty($keyPass)) { $keyPass = $storePass }
 Step "Building signed release APK"
 if (Test-Path -Path "$ProjectPath\android\gradlew.bat") {
     Set-Location "$ProjectPath\android"
+    # Run clean before assemble
+    & .\gradlew.bat clean
+
     $gradleArgs = @(
         "assembleRelease",
         "-Pandroid.injected.signing.store.file=$KeystorePath",
@@ -48,14 +55,15 @@ $storePass = $null
 $keyPass = $null
 [System.GC]::Collect()
 
-$apk = "$ProjectPath\android\app\build\outputs\apk\release\app-release.apk"
 Set-Location $ProjectPath
 
-if (Test-Path $apk) {
+if (Test-Path $ApkPath) {
+    $time = (Get-Item $ApkPath).LastWriteTime
     Write-Host "`n  SUCCESS" -ForegroundColor Green
-    Write-Host "  Signed APK: $apk" -ForegroundColor Green
+    Write-Host "  Signed APK: $ApkPath" -ForegroundColor Green
+    Write-Host "  Timestamp: $time" -ForegroundColor Yellow
     Write-Host "  Send this file to your phone to test the final version.`n"
-    Start-Process explorer.exe "/select,`"$apk`""
+    Start-Process explorer.exe "/select,`"$ApkPath`""
 } else {
-    Write-Error "Build finished but APK not found at $apk"
+    Write-Error "Build finished but APK not found at $ApkPath. Please check for Gradle errors above."
 }

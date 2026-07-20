@@ -44,6 +44,8 @@ export default function BingoXGame() {
 
     const [activeTab, setActiveTab] = useState<'play' | 'shop' | 'payout' | 'catalog' | 'how_to_play'>('play')
     const [isMuted, setIsMuted] = useState(false)
+    const [isAdPlaying, setIsAdPlaying] = useState(false)
+    const [showBingoCelebration, setShowBingoCelebration] = useState(false)
     const [board, setBoard] = useState<BingoCell[][]>(BingoEngine.generateBoard())
     const [calledNumbers, setCalledNumbers] = useState<number[]>([])
     const [currentCall, setCurrentCall] = useState<number | null>(null)
@@ -57,6 +59,9 @@ export default function BingoXGame() {
     const [isAdLoading, setIsAdLoading] = useState(false)
     const [completedPatterns, setCompletedPatterns] = useState<string[]>([])
     const [hasAwardedX, setHasAwardedX] = useState(false)
+    const [hasAwardedFullHouse, setHasAwardedFullHouse] = useState(false)
+    const [isDoubleScoring, setIsDoubleScoring] = useState(false)
+    const [hasWildCard, setHasWildCard] = useState(false)
     const [roundCounter, setRoundCounter] = useState(0)
     const [leaderboard, setLeaderboard] = useState<any[]>([])
 
@@ -121,21 +126,20 @@ export default function BingoXGame() {
                 await AdMob.prepareInterstitialAd({ adId: CONFIG.ADMOB_INTERSTITIAL_ID, isTesting: CONFIG.IS_TESTING });
                 await AdMob.prepareRewardVideoAd({ adId: CONFIG.ADMOB_REWARDED_ID, isTesting: CONFIG.IS_TESTING });
 
-                // Slight delay to ensure layout is ready
-                setTimeout(async () => {
-                    await AdMob.showBanner({
-                        adId: CONFIG.ADMOB_BANNER_ID,
-                        position: BannerAdPosition.TOP_CENTER,
-                        size: BannerAdSize.BANNER,
-                        isTesting: CONFIG.IS_TESTING,
-                        margin: 80 // Increased margin significantly for top layout
-                    });
-                }, 3000);
+                // Banner at the very top
+                await AdMob.showBanner({
+                    adId: CONFIG.ADMOB_BANNER_ID,
+                    position: BannerAdPosition.TOP_CENTER,
+                    size: BannerAdSize.BANNER,
+                    isTesting: CONFIG.IS_TESTING,
+                    margin: 0
+                });
             } catch (e) { console.log("AdMob failed", e); }
         };
 
         const rListener = AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
             console.log("Reward Granted from global listener");
+            setIsAdPlaying(false);
 
             // Fix: Ensure music resumes and is unmuted
             if (bgmRef.current) {
@@ -143,48 +147,52 @@ export default function BingoXGame() {
                 bgmRef.current.play().catch(() => {});
             }
 
-            const newBoard = [...board];
-            const newlyCalled: number[] = [];
+            const bonuses = ['FREE_DAUB', 'AUTO_DAUB', 'TIME_EXTEND', 'DOUBLE_SCORE'];
+            const chosen = bonuses[Math.floor(Math.random() * bonuses.length)];
 
-            // Pick 3 random numbers on the board that haven't been called OR marked yet
-            const availableOnBoard: {r: number, c: number, num: number}[] = [];
-            for (let r = 0; r < 5; r++) {
-                for (let c = 0; c < 5; c++) {
-                    const cell = newBoard[r][c];
-                    // We only want numbers that are NOT marked AND NOT already in calledNumbers
-                    if (cell.number !== "FREE" && !cell.marked && !calledNumbers.includes(cell.number as number)) {
-                        availableOnBoard.push({r, c, num: cell.number as number});
-                    }
-                }
+            if (chosen === 'FREE_DAUB') {
+                setHasWildCard(true);
+                toast.success("Lucky Daub: FREE WILD CARD!", { icon: '✨', description: 'Mark any cell on the board!' });
             }
+            else if (chosen === 'AUTO_DAUB') {
+                const newBoard = [...board];
+                let count = 0;
+                // Shuffle available indices
+                const indices: {r: number, c: number}[] = [];
+                for(let r=0; r<5; r++) for(let c=0; c<5; c++) if(!newBoard[r][c].marked) indices.push({r,c});
 
-            // Shuffle and pick 3
-            const toCall = availableOnBoard.sort(() => Math.random() - 0.5).slice(0, 3);
+                const toMark = indices.sort(() => Math.random() - 0.5).slice(0, 2);
+                toMark.forEach(idx => {
+                    newBoard[idx.r][idx.c].marked = true;
+                });
 
-            toCall.forEach(item => {
-                newlyCalled.push(item.num);
-                newBoard[item.r][item.c].marked = true;
-            });
-
-            setCalledNumbers(prev => [...newlyCalled, ...prev]);
-            setBoard(newBoard);
-            setSessionScore(prev => prev + 2000);
-
-            if (newlyCalled.length > 0) {
-                toast.success(`Lucky Daub! Matched: ${newlyCalled.join(', ')}`, { icon: '✨' });
-            } else {
-                toast.success("Lucky Daub! +2,000 JS Bonus", { icon: '✨' });
+                setBoard(newBoard);
+                toast.success("Lucky Daub: AUTO DAUB 2!", { icon: '🤖' });
+                const winResult = BingoEngine.checkWins(newBoard);
+                processWins(winResult);
             }
-
-            // Force a win check immediately
-            const winResult = BingoEngine.checkWins(newBoard);
-            processWins(winResult);
+            else if (chosen === 'TIME_EXTEND') {
+                setTimeLeft(prev => prev + 10);
+                toast.success("Lucky Daub: +10 SECONDS!", { icon: '⏰' });
+            }
+            else if (chosen === 'DOUBLE_SCORE') {
+                setIsDoubleScoring(true);
+                setTimeout(() => setIsDoubleScoring(false), 15000);
+                toast.success("Lucky Daub: 2X POINTS (15s)!", { icon: '🔥' });
+            }
 
             setIsAdLoading(false);
         });
 
-        const fListener = AdMob.addListener(RewardAdPluginEvents.FailedToLoad, () => setIsAdLoading(false));
-        const dListener = AdMob.addListener(RewardAdPluginEvents.Dismissed, () => setIsAdLoading(false));
+        const fListener = AdMob.addListener(RewardAdPluginEvents.FailedToLoad, () => {
+            setIsAdLoading(false);
+            setIsAdPlaying(false);
+        });
+        const dListener = AdMob.addListener(RewardAdPluginEvents.Dismissed, () => {
+            setIsAdLoading(false);
+            setIsAdPlaying(false);
+            if (bgmRef.current) bgmRef.current.play().catch(() => {});
+        });
 
         if (user) initAds();
         else {
@@ -196,7 +204,7 @@ export default function BingoXGame() {
             fListener.remove();
             dListener.remove();
         }
-    }, [user, board, calledNumbers]);
+    }, [user, board, calledNumbers, isMuted]);
 
     // Game Loops
     useEffect(() => {
@@ -252,6 +260,7 @@ export default function BingoXGame() {
     }, [activeTab]);
 
     const pickNumber = () => {
+        if (isAdPlaying) return;
         const remaining = Array.from({length: 75}, (_, i) => i + 1).filter(n => !calledNumbers.includes(n));
         if (remaining.length === 0) {
             setGameOver(true);
@@ -268,23 +277,33 @@ export default function BingoXGame() {
     }
 
     const playCall = (num: number) => {
+        if (isAdPlaying) return;
         let prefix = num <= 15 ? "B" : num <= 30 ? "I" : num <= 45 ? "N" : num <= 60 ? "G" : "O";
         const audio = new Audio(`/audio/calls/${prefix}-${num}.MP3`);
         audio.play().catch(() => {});
     }
 
     const markCell = (r: number, c: number) => {
-        if (gameOver) return;
+        if (gameOver || isAdPlaying) return;
         const cell = board[r][c];
-        if (cell.number === "FREE" || calledNumbers.includes(cell.number as number)) {
+
+        // Allowed to mark if number was called, OR if it's FREE, OR if player has a Wild Card active
+        if (cell.number === "FREE" || calledNumbers.includes(cell.number as number) || hasWildCard) {
             if (cell.marked) return;
             const newBoard = [...board];
             newBoard[r][c].marked = true;
             setBoard(newBoard);
 
-            const bonus = Math.floor((100 - progress) * 5);
-            const earnedThisDaub = CONFIG.POINTS_PER_DAUB + bonus;
+            const speedBonus = Math.floor((100 - progress) * 5);
+            let earnedThisDaub = CONFIG.POINTS_PER_DAUB + speedBonus;
+            if (isDoubleScoring) earnedThisDaub *= 2;
+
             setSessionScore(prev => prev + earnedThisDaub);
+
+            // Consume wild card if used on a non-called number
+            if (hasWildCard && cell.number !== "FREE" && !calledNumbers.includes(cell.number as number)) {
+                setHasWildCard(false);
+            }
 
             const winResult = BingoEngine.checkWins(newBoard);
             processWins(winResult);
@@ -293,30 +312,50 @@ export default function BingoXGame() {
 
     const processWins = (winResult: any) => {
         let extraScore = 0;
+        let triggeredBingo = false;
+
         winResult.patterns.forEach((p: any) => {
             const pKey = p.join(',');
             if (!completedPatterns.includes(pKey)) {
                 extraScore += CONFIG.BINGO_BONUS;
                 setCompletedPatterns(prev => [...prev, pKey]);
+                triggeredBingo = true;
                 toast.success("BINGO!", {
                     icon: '🔥',
                     description: "Five in a row! +5,000 JS",
                     duration: 4000
                 });
-                // Play Bingo Sound
-                new Audio('/audio/sfx/bingo.mp3').play().catch(() => {});
             }
         });
 
         if (winResult.isXPattern && !hasAwardedX) {
             extraScore += CONFIG.X_PATTERN_BONUS;
             setHasAwardedX(true);
+            triggeredBingo = true;
             toast.success("X-PATTERN BONUS!", {
                 icon: '💎',
                 description: "Massive Win! +15,000 JS",
                 duration: 5000
             });
             new Audio('/audio/sfx/jackpot.mp3').play().catch(() => {});
+        }
+
+        if (winResult.isFullHouse && !hasAwardedFullHouse) {
+            extraScore += 5000;
+            setHasAwardedFullHouse(true);
+            triggeredBingo = true;
+            toast.success("FULL HOUSE!", {
+                icon: '🏆',
+                description: "Amazing! +5,000 JS",
+                duration: 5000
+            });
+            new Audio('/audio/sfx/jackpot.mp3').play().catch(() => {});
+        }
+
+        if (triggeredBingo) {
+            new Audio('/audio/sfx/bingo.mp3').play().catch(() => {});
+            setShowBingoCelebration(true);
+            setTimeout(() => setShowBingoCelebration(false), 3000);
         }
 
         if (extraScore > 0) {
@@ -327,12 +366,16 @@ export default function BingoXGame() {
     const handleRewardBoost = async () => {
         if (!isAutoPlaying || gameOver || isAdLoading) return;
         setIsAdLoading(true);
+        setIsAdPlaying(true);
+        if (bgmRef.current) bgmRef.current.pause();
         try {
             await AdMob.prepareRewardVideoAd({ adId: CONFIG.ADMOB_REWARDED_ID, isTesting: CONFIG.IS_TESTING });
             await AdMob.showRewardVideoAd();
         } catch (e) {
             toast.error("Ad not ready yet.");
             setIsAdLoading(false);
+            setIsAdPlaying(false);
+            if (bgmRef.current) bgmRef.current.play().catch(() => {});
         }
     }
 
@@ -361,7 +404,7 @@ export default function BingoXGame() {
         const newRoundCount = roundCounter + 1;
         setRoundCounter(newRoundCount);
 
-        if (newRoundCount % 2 === 0) { // Changed to every 2 rounds
+        if (newRoundCount % 2 === 0) { // Every 2 rounds
             try {
                 await AdMob.showInterstitialAd();
                 await AdMob.prepareInterstitialAd({ adId: CONFIG.ADMOB_INTERSTITIAL_ID, isTesting: CONFIG.IS_TESTING });
@@ -387,6 +430,9 @@ export default function BingoXGame() {
         setSessionScore(0);
         setCompletedPatterns([]);
         setHasAwardedX(false);
+        setHasAwardedFullHouse(false);
+        setIsDoubleScoring(false);
+        setHasWildCard(false);
     }
 
     if (loading) return <div className="h-screen w-full bg-[#050510] flex items-center justify-center text-white"><Loader2 className="animate-spin text-primary" /></div>;
@@ -451,8 +497,12 @@ export default function BingoXGame() {
 
                             <div className="flex flex-col items-end gap-3">
                                 <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-2xl flex items-center gap-2 backdrop-blur-xl">
+                                    <Flame className={cn("h-4 w-4", isDoubleScoring ? "text-orange-500 animate-pulse" : "text-primary")} />
+                                    <span className="text-xl font-black italic">{sessionScore.toLocaleString()}</span>
+                                </div>
+                                <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-2xl flex items-center gap-2 backdrop-blur-xl">
                                     <Zap className="h-4 w-4 text-yellow-400 fill-yellow-400 shadow-glow" />
-                                    <span className="text-xl font-black italic">{(profile?.jackpot_score || 0).toLocaleString()}</span>
+                                    <span className="text-[10px] font-black italic">{(profile?.jackpot_score || 0).toLocaleString()} JS</span>
                                 </div>
                                 <div className={cn(
                                     "flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black italic border",
@@ -557,7 +607,7 @@ export default function BingoXGame() {
                                     <span className="font-black text-xl italic uppercase leading-none mb-1">Double JS</span>
                                     <span className="text-[10px] opacity-40 font-bold uppercase tracking-widest">2x Points per daub</span>
                                 </div>
-                                <button onClick={() => toast.info("Shop feature under construction. Coming soon with Play Store activation!")} className="bg-primary text-black font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform">$4.99</button>
+                                <button onClick={() => purchase(PRODUCT_DOUBLE_JS)} className="bg-primary text-black font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform">$4.99</button>
                             </div>
                         </div>
                     </div>
@@ -616,11 +666,17 @@ export default function BingoXGame() {
                 {activeTab === 'payout' && (
                     <div className="w-full py-8 animate-in slide-in-from-right duration-300">
                         <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-emerald-400 text-center">Wins</h2>
-                        <div className="bg-gradient-to-br from-emerald-900 to-green-950 p-8 rounded-[50px] border-2 border-emerald-500/20 shadow-2xl relative overflow-hidden group">
+                        <div className="bg-gradient-to-br from-emerald-900 to-green-950 p-8 rounded-[50px] border-2 border-emerald-500/20 shadow-2xl relative overflow-hidden group mb-6">
                              <div className="absolute inset-0 bg-white/5 opacity-0 group-active:opacity-100 transition-opacity" />
-                             <Gift className="h-12 w-12 text-emerald-400 mb-4" />
+                             <div className="flex justify-between items-start">
+                                <Gift className="h-12 w-12 text-emerald-400 mb-4" />
+                                <div className="bg-black/20 px-4 py-2 rounded-2xl border border-white/10 text-right">
+                                    <div className="text-[8px] uppercase font-black opacity-40">Your Total</div>
+                                    <div className="text-xl font-black italic text-white">{(profile?.jackpot_score || 0).toLocaleString()} JS</div>
+                                </div>
+                             </div>
                              <h3 className="text-2xl font-black uppercase italic leading-none mb-2">Jackpot Rewards</h3>
-                             <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mb-6 text-center">Redeem points for real world money</p>
+                             <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mb-6">Redeem points for real world money</p>
                              <button onClick={() => setActiveTab('catalog')} className="w-full bg-white text-emerald-900 font-black py-4 rounded-3xl uppercase tracking-widest text-xs active:scale-95 transition-transform pointer-events-auto relative z-[100]">Browse Catalog</button>
                         </div>
 
@@ -634,12 +690,16 @@ export default function BingoXGame() {
                             <Trophy className="h-8 w-8 text-yellow-400 mx-auto mb-4" />
                             <h3 className="font-black uppercase italic mb-4 text-xs opacity-50 text-center text-primary tracking-widest">Global Leaderboard</h3>
                             <div className="space-y-3">
-                                {leaderboard.map((u, i) => (
-                                    <div key={i} className="flex justify-between items-center text-[10px] font-black border-b border-white/5 pb-2">
-                                        <span className="flex items-center gap-2"><span className="opacity-30">{i+1}.</span> {u.username || 'Gamer'}</span>
-                                        <span className="text-primary italic">{(u.jackpot_score || 0).toLocaleString()} JS</span>
-                                    </div>
-                                ))}
+                                {leaderboard.length > 0 ? (
+                                    leaderboard.map((u, i) => (
+                                        <div key={i} className="flex justify-between items-center text-[10px] font-black border-b border-white/5 pb-2">
+                                            <span className="flex items-center gap-2"><span className="opacity-30">{i+1}.</span> {u.username || 'Gamer'}</span>
+                                            <span className="text-primary italic">{(u.jackpot_score || 0).toLocaleString()} JS</span>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="text-center py-4 opacity-30 text-[10px] font-black uppercase italic tracking-widest">No scores yet today</div>
+                                )}
                             </div>
                         </div>
 
@@ -656,6 +716,24 @@ export default function BingoXGame() {
                 <NavButton icon={Home} label="Play" active={activeTab === 'play'} onClick={() => setActiveTab('play')} />
                 <NavButton icon={Award} label="Wins" active={activeTab === 'payout'} onClick={() => setActiveTab('payout')} />
             </nav>
+
+            {/* Bingo Celebration Overlay */}
+            {showBingoCelebration && (
+                <div className="fixed inset-0 z-[3000] pointer-events-none flex items-center justify-center overflow-hidden">
+                    <div className="animate-bounce text-6xl font-black italic text-primary drop-shadow-[0_0_30px_rgba(34,211,238,0.8)] uppercase tracking-tighter">BINGO!</div>
+                    {[...Array(20)].map((_, i) => (
+                        <div key={i} className="absolute animate-fall" style={{
+                            left: `${Math.random() * 100}%`,
+                            top: `-10%`,
+                            animationDelay: `${Math.random() * 2}s`,
+                            backgroundColor: i % 2 === 0 ? '#22d3ee' : '#ec4899',
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%'
+                        }} />
+                    ))}
+                </div>
+            )}
 
             {/* Win/Loss Modal */}
             {gameOver && (

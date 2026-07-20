@@ -9,10 +9,11 @@
     "assets:generate": "capacitor-assets generate --android"
   },
   "dependencies": {
-    "@capacitor-community/admob": "^6.0.0",
-    "@capacitor/android": "^6.1.2",
-    "@capacitor/browser": "^6.0.2",
-    "@capacitor/core": "^6.1.2",
+    "@capacitor-community/admob": "^8.0.0",
+    "@capacitor/android": "^8",
+    "@capacitor/browser": "^8.0.4",
+    "@capacitor/core": "^8",
+    "@capawesome/capacitor-android-edge-to-edge-support": "^8.0.8",
     "@supabase/supabase-js": "^2.45.4",
     "clsx": "^2.1.1",
     "lucide-react": "^0.441.0",
