@@ -42,7 +42,7 @@ export default function BingoXGame() {
     const { user, profile, loading, signIn, signUp, signOut, addJS, supabase } = useAuth()
     const { purchase } = useBilling(addJS)
 
-    const [activeTab, setActiveTab] = useState<'play' | 'shop' | 'payout' | 'catalog'>('play')
+    const [activeTab, setActiveTab] = useState<'play' | 'shop' | 'payout' | 'catalog' | 'how_to_play'>('play')
     const [isMuted, setIsMuted] = useState(false)
     const [board, setBoard] = useState<BingoCell[][]>(BingoEngine.generateBoard())
     const [calledNumbers, setCalledNumbers] = useState<number[]>([])
@@ -58,6 +58,7 @@ export default function BingoXGame() {
     const [completedPatterns, setCompletedPatterns] = useState<string[]>([])
     const [hasAwardedX, setHasAwardedX] = useState(false)
     const [roundCounter, setRoundCounter] = useState(0)
+    const [leaderboard, setLeaderboard] = useState<any[]>([])
 
     // Auth Form State
     const [email, setEmail] = useState('')
@@ -89,6 +90,7 @@ export default function BingoXGame() {
     // BGM Control
     useEffect(() => {
         if (!bgmRef.current) return;
+        bgmRef.current.muted = isMuted;
         let targetSrc = "";
         if (!user || (activeTab !== 'play' && !isAutoPlaying)) {
             targetSrc = "/audio/bgm/login.mp3";
@@ -108,7 +110,7 @@ export default function BingoXGame() {
             bgmRef.current.load();
             bgmRef.current.play().catch(() => {});
         }
-    }, [user, isAutoPlaying, activeTab]);
+    }, [user, isAutoPlaying, activeTab, isMuted]); // Added isMuted to dependencies
 
     // ADMOB INITIALIZATION
     useEffect(() => {
@@ -125,32 +127,52 @@ export default function BingoXGame() {
                         position: BannerAdPosition.TOP_CENTER,
                         size: BannerAdSize.BANNER,
                         isTesting: CONFIG.IS_TESTING,
-                        margin: 60 // Increased margin for better visibility
+                        margin: 80 // Increased margin significantly for top layout
                     });
-                }, 2000);
+                }, 3000);
             } catch (e) { console.log("AdMob failed", e); }
         };
 
         const rListener = AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
             console.log("Reward Granted from global listener");
+
+            // Fix: Ensure music resumes and is unmuted
+            if (bgmRef.current) {
+                bgmRef.current.muted = isMuted;
+                bgmRef.current.play().catch(() => {});
+            }
+
             const newBoard = [...board];
-            let daubedCount = 0;
-            // Iterate through the board and mark any called but unmarked numbers
+            const newlyCalled: number[] = [];
+
+            // Pick 3 random numbers on the board that haven't been called yet
+            const availableOnBoard: {r: number, c: number, num: number}[] = [];
             for (let r = 0; r < 5; r++) {
                 for (let c = 0; c < 5; c++) {
-                    const num = newBoard[r][c].number;
-                    if (!newBoard[r][c].marked && (num === "FREE" || calledNumbers.includes(num as number))) {
-                        newBoard[r][c].marked = true;
-                        daubedCount++;
-                        // We can mark up to 3 numbers for a Lucky Daub reward
-                        if (daubedCount >= 3) break;
+                    const cell = newBoard[r][c];
+                    if (cell.number !== "FREE" && !calledNumbers.includes(cell.number as number)) {
+                        availableOnBoard.push({r, c, num: cell.number as number});
                     }
                 }
-                if (daubedCount >= 3) break;
             }
+
+            // Shuffle and pick 3
+            const toCall = availableOnBoard.sort(() => Math.random() - 0.5).slice(0, 3);
+
+            toCall.forEach(item => {
+                newlyCalled.push(item.num);
+                newBoard[item.r][item.c].marked = true;
+            });
+
+            setCalledNumbers(prev => [...newlyCalled, ...prev]);
             setBoard(newBoard);
-            setSessionScore(prev => prev + 1500); // Increased bonus
-            toast.success("Lucky Daub Applied!", { icon: '✨' });
+            setSessionScore(prev => prev + 2000);
+            toast.success(`Lucky Daub! Called: ${newlyCalled.join(', ')}`, { icon: '✨' });
+
+            // Force a win check immediately
+            const winResult = BingoEngine.checkWins(newBoard);
+            processWins(winResult);
+
             setIsAdLoading(false);
         });
 
@@ -207,6 +229,21 @@ export default function BingoXGame() {
         }
     }, [isAutoPlaying, currentCall, activeTab]);
 
+    // Fetch Leaderboard
+    useEffect(() => {
+        if (activeTab === 'payout' && supabase) {
+            const getLeaderboard = async () => {
+                const { data } = await supabase
+                    .from('profiles')
+                    .select('username, jackpot_score')
+                    .order('jackpot_score', { ascending: false })
+                    .limit(5);
+                if (data) setLeaderboard(data);
+            };
+            getLeaderboard();
+        }
+    }, [activeTab]);
+
     const pickNumber = () => {
         const remaining = Array.from({length: 75}, (_, i) => i + 1).filter(n => !calledNumbers.includes(n));
         if (remaining.length === 0) {
@@ -239,26 +276,44 @@ export default function BingoXGame() {
             setBoard(newBoard);
 
             const bonus = Math.floor((100 - progress) * 5);
-            let earnedThisDaub = CONFIG.POINTS_PER_DAUB + bonus;
+            const earnedThisDaub = CONFIG.POINTS_PER_DAUB + bonus;
+            setSessionScore(prev => prev + earnedThisDaub);
 
             const winResult = BingoEngine.checkWins(newBoard);
+            processWins(winResult);
+        }
+    }
 
-            winResult.patterns.forEach(p => {
-                const pKey = p.join(',');
-                if (!completedPatterns.includes(pKey)) {
-                    earnedThisDaub += CONFIG.BINGO_BONUS;
-                    setCompletedPatterns(prev => [...prev, pKey]);
-                    toast.success("BINGO! +5,000", { icon: '🔥' });
-                }
-            });
-
-            if (winResult.isXPattern && !hasAwardedX) {
-                earnedThisDaub += CONFIG.X_PATTERN_BONUS;
-                setHasAwardedX(true);
-                toast.success("X-PATTERN BONUS! +15,000", { icon: '💎' });
+    const processWins = (winResult: any) => {
+        let extraScore = 0;
+        winResult.patterns.forEach((p: any) => {
+            const pKey = p.join(',');
+            if (!completedPatterns.includes(pKey)) {
+                extraScore += CONFIG.BINGO_BONUS;
+                setCompletedPatterns(prev => [...prev, pKey]);
+                toast.success("BINGO!", {
+                    icon: '🔥',
+                    description: "Five in a row! +5,000 JS",
+                    duration: 4000
+                });
+                // Play Bingo Sound
+                new Audio('/audio/sfx/bingo.mp3').play().catch(() => {});
             }
+        });
 
-            setSessionScore(prev => prev + earnedThisDaub);
+        if (winResult.isXPattern && !hasAwardedX) {
+            extraScore += CONFIG.X_PATTERN_BONUS;
+            setHasAwardedX(true);
+            toast.success("X-PATTERN BONUS!", {
+                icon: '💎',
+                description: "Massive Win! +15,000 JS",
+                duration: 5000
+            });
+            new Audio('/audio/sfx/jackpot.mp3').play().catch(() => {});
+        }
+
+        if (extraScore > 0) {
+            setSessionScore(prev => prev + extraScore);
         }
     }
 
@@ -299,11 +354,19 @@ export default function BingoXGame() {
         const newRoundCount = roundCounter + 1;
         setRoundCounter(newRoundCount);
 
-        if (newRoundCount % 3 === 0) {
+        if (newRoundCount % 2 === 0) { // Changed to every 2 rounds
             try {
                 await AdMob.showInterstitialAd();
                 await AdMob.prepareInterstitialAd({ adId: CONFIG.ADMOB_INTERSTITIAL_ID, isTesting: CONFIG.IS_TESTING });
             } catch (e) {}
+        }
+
+        // Shuffle BGM for new round
+        if (bgmRef.current) {
+            const randomTrack = GAME_TRACKS[Math.floor(Math.random() * GAME_TRACKS.length)];
+            bgmRef.current.src = `/audio/bgm/${randomTrack}`;
+            bgmRef.current.load();
+            if (isAutoPlaying) bgmRef.current.play().catch(() => {});
         }
 
         setBoard(BingoEngine.generateBoard());
@@ -479,7 +542,7 @@ export default function BingoXGame() {
                                     <span className="font-black text-xl italic uppercase leading-none mb-1">Double JS</span>
                                     <span className="text-[10px] opacity-40 font-bold uppercase tracking-widest">2x Points per daub</span>
                                 </div>
-                                <button onClick={() => purchase(PRODUCT_DOUBLE_JS)} className="bg-primary text-black font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform">$4.99</button>
+                                <button onClick={() => toast.info("Shop feature under construction. Coming soon with Play Store activation!")} className="bg-primary text-black font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform">$4.99</button>
                             </div>
                         </div>
                     </div>
@@ -510,6 +573,31 @@ export default function BingoXGame() {
                     </div>
                 )}
 
+                {activeTab === 'how_to_play' && (
+                    <div className="w-full py-8 animate-in slide-in-from-right duration-300 text-left">
+                        <button onClick={() => setActiveTab('payout')} className="flex items-center gap-2 text-white/30 uppercase font-black text-[10px] mb-8 active:scale-90"><ArrowLeft className="h-4 w-4" /> Back</button>
+                        <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-emerald-400 text-center">Rules</h2>
+                        <div className="bg-white/5 border border-white/10 p-8 rounded-[40px] space-y-6">
+                            <section>
+                                <h3 className="text-primary font-black uppercase text-xs mb-2 italic tracking-widest">Winning Patterns</h3>
+                                <ul className="text-sm text-white/60 space-y-2 font-bold uppercase">
+                                    <li>• 5 in a row (Horizontal, Vertical, Diagonal)</li>
+                                    <li>• 4 Corners (All four outer corner cells)</li>
+                                    <li>• X-Pattern (Both diagonals - 15,000 JS Bonus!)</li>
+                                </ul>
+                            </section>
+                            <section>
+                                <h3 className="text-primary font-black uppercase text-xs mb-2 italic tracking-widest">Scoring</h3>
+                                <p className="text-sm text-white/60 leading-relaxed font-bold uppercase">Mark numbers as they are called to earn points. Faster marks get higher speed bonuses!</p>
+                            </section>
+                            <section>
+                                <h3 className="text-primary font-black uppercase text-xs mb-2 italic tracking-widest">Withdrawals</h3>
+                                <p className="text-sm text-white/60 leading-relaxed font-bold uppercase">Accumulate JS (Jackpot Score) and redeem them in the Prize Catalog for Visa, Amazon, or PayPal rewards.</p>
+                            </section>
+                        </div>
+                    </div>
+                )}
+
                 {activeTab === 'payout' && (
                     <div className="w-full py-8 animate-in slide-in-from-right duration-300">
                         <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-emerald-400 text-center">Wins</h2>
@@ -518,7 +606,26 @@ export default function BingoXGame() {
                              <Gift className="h-12 w-12 text-emerald-400 mb-4" />
                              <h3 className="text-2xl font-black uppercase italic leading-none mb-2">Jackpot Rewards</h3>
                              <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mb-6 text-center">Redeem points for real world money</p>
-                             <button onClick={() => setActiveTab('catalog')} className="w-full bg-white text-emerald-900 font-black py-4 rounded-3xl uppercase tracking-widest text-xs active:scale-95 transition-transform pointer-events-auto">Browse Catalog</button>
+                             <button onClick={() => setActiveTab('catalog')} className="w-full bg-white text-emerald-900 font-black py-4 rounded-3xl uppercase tracking-widest text-xs active:scale-95 transition-transform pointer-events-auto relative z-[100]">Browse Catalog</button>
+                        </div>
+
+                        {/* Additional Info Buttons */}
+                        <div className="grid grid-cols-2 gap-4 mt-6">
+                            <button onClick={() => setActiveTab('how_to_play')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] active:scale-95 transition-all text-center">How to Play</button>
+                            <button onClick={() => window.open(CONFIG.PRIVACY_URL, '_blank')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] active:scale-95 transition-all text-center">Privacy</button>
+                        </div>
+
+                        <div className="mt-12 bg-white/5 rounded-[40px] p-6 border-2 border-white/10">
+                            <Trophy className="h-8 w-8 text-yellow-400 mx-auto mb-4" />
+                            <h3 className="font-black uppercase italic mb-4 text-xs opacity-50 text-center text-primary tracking-widest">Global Leaderboard</h3>
+                            <div className="space-y-3">
+                                {leaderboard.map((u, i) => (
+                                    <div key={i} className="flex justify-between items-center text-[10px] font-black border-b border-white/5 pb-2">
+                                        <span className="flex items-center gap-2"><span className="opacity-30">{i+1}.</span> {u.username || 'Gamer'}</span>
+                                        <span className="text-primary italic">{(u.jackpot_score || 0).toLocaleString()} JS</span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
 
                         <div className="mt-8 flex flex-col items-center gap-4 text-center">

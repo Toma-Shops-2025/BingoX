@@ -35,7 +35,7 @@ export class BingoEngine {
         return newArray;
     }
 
-    public static checkWins(board: BingoCell[][]): { patterns: number[][], isXPattern: boolean } {
+    public static checkWins(board: BingoCell[][]): { patterns: number[][], isXPattern: boolean, isFourCorners: boolean } {
         const patterns: number[][] = [];
 
         // 0-4 rows, 5-9 cols, 10 diag1, 11 diag2
@@ -55,9 +55,14 @@ export class BingoEngine {
         const diag1Full = [0,1,2,3,4].every(i => board[i][i].marked);
         const diag2Full = [0,1,2,3,4].every(i => board[i][4-i].marked);
 
+        // Four Corners
+        const fourCornersFull = board[0][0].marked && board[0][4].marked && board[4][0].marked && board[4][4].marked;
+        if (fourCornersFull) patterns.push([0,0, 0,4, 4,0, 4,4]);
+
         return {
             patterns,
-            isXPattern: diag1Full && diag2Full
+            isXPattern: diag1Full && diag2Full,
+            isFourCorners: fourCornersFull
         };
     }
 }
