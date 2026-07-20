@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { BingoEngine, BingoCell } from '@/logic/BingoEngine'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
+import { useBilling, PRODUCT_DOUBLE_JS } from '@/hooks/use-billing'
 import { CONFIG } from '@/config'
 import { AdMob, BannerAdPosition, BannerAdSize, RewardAdPluginEvents } from '@capacitor-community/admob'
 import {
@@ -39,6 +40,7 @@ const REWARDS = [
 
 export default function BingoXGame() {
     const { user, profile, loading, signIn, signUp, signOut, addJS, supabase } = useAuth()
+    const { purchase } = useBilling(addJS)
 
     const [activeTab, setActiveTab] = useState<'play' | 'shop' | 'payout' | 'catalog'>('play')
     const [isMuted, setIsMuted] = useState(false)
@@ -55,6 +57,7 @@ export default function BingoXGame() {
     const [isAdLoading, setIsAdLoading] = useState(false)
     const [completedPatterns, setCompletedPatterns] = useState<string[]>([])
     const [hasAwardedX, setHasAwardedX] = useState(false)
+    const [roundCounter, setRoundCounter] = useState(0)
 
     // Auth Form State
     const [email, setEmail] = useState('')
@@ -122,22 +125,55 @@ export default function BingoXGame() {
                         position: BannerAdPosition.TOP_CENTER,
                         size: BannerAdSize.BANNER,
                         isTesting: CONFIG.IS_TESTING,
-                        margin: 40
+                        margin: 60 // Increased margin for better visibility
                     });
                 }, 2000);
             } catch (e) { console.log("AdMob failed", e); }
         };
+
+        const rListener = AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
+            console.log("Reward Granted from global listener");
+            const newBoard = [...board];
+            let daubedCount = 0;
+            // Iterate through the board and mark any called but unmarked numbers
+            for (let r = 0; r < 5; r++) {
+                for (let c = 0; c < 5; c++) {
+                    const num = newBoard[r][c].number;
+                    if (!newBoard[r][c].marked && (num === "FREE" || calledNumbers.includes(num as number))) {
+                        newBoard[r][c].marked = true;
+                        daubedCount++;
+                        // We can mark up to 3 numbers for a Lucky Daub reward
+                        if (daubedCount >= 3) break;
+                    }
+                }
+                if (daubedCount >= 3) break;
+            }
+            setBoard(newBoard);
+            setSessionScore(prev => prev + 1500); // Increased bonus
+            toast.success("Lucky Daub Applied!", { icon: '✨' });
+            setIsAdLoading(false);
+        });
+
+        const fListener = AdMob.addListener(RewardAdPluginEvents.FailedToLoad, () => setIsAdLoading(false));
+        const dListener = AdMob.addListener(RewardAdPluginEvents.Dismissed, () => setIsAdLoading(false));
+
         if (user) initAds();
         else {
           try { AdMob.hideBanner(); } catch(e) {}
         }
-    }, [user]);
+
+        return () => {
+            rListener.remove();
+            fListener.remove();
+            dListener.remove();
+        }
+    }, [user, board, calledNumbers]);
 
     // Game Loops
     useEffect(() => {
         let interval: any;
         if (isAutoPlaying && !gameOver && activeTab === 'play') {
-            interval = setInterval(() => { pickNumber(); }, 5000);
+            interval = setInterval(() => { pickNumber(); }, 3500); // Faster calling: 3.5 seconds
         }
         return () => clearInterval(interval);
     }, [isAutoPlaying, calledNumbers, gameOver, activeTab]);
@@ -164,7 +200,8 @@ export default function BingoXGame() {
     useEffect(() => {
         if (isAutoPlaying && activeTab === 'play') {
             const timer = setInterval(() => {
-                setProgress(prev => (prev >= 100 ? 0 : prev + 2.0));
+                // Progress matches the 3.5s interval (100 / 35 steps)
+                setProgress(prev => (prev >= 100 ? 0 : prev + 2.86));
             }, 100);
             return () => clearInterval(timer);
         }
@@ -226,33 +263,15 @@ export default function BingoXGame() {
     }
 
     const handleRewardBoost = async () => {
-        if (!isAutoPlaying || gameOver) return;
+        if (!isAutoPlaying || gameOver || isAdLoading) return;
         setIsAdLoading(true);
         try {
             await AdMob.prepareRewardVideoAd({ adId: CONFIG.ADMOB_REWARDED_ID, isTesting: CONFIG.IS_TESTING });
-            const listener = await AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
-                const newBoard = [...board];
-                let daubedCount = 0;
-                for (let r = 0; r < 5; r++) {
-                    for (let c = 0; c < 5; c++) {
-                        if (!newBoard[r][c].marked && calledNumbers.includes(newBoard[r][c].number as number)) {
-                            newBoard[r][c].marked = true;
-                            daubedCount++;
-                            if (daubedCount >= 2) break;
-                        }
-                    }
-                    if (daubedCount >= 2) break;
-                }
-                setBoard(newBoard);
-                setSessionScore(prev => prev + 1000);
-                toast.success("Lucky Daub Applied!", { icon: '✨' });
-                listener.remove();
-            });
             await AdMob.showRewardVideoAd();
         } catch (e) {
             toast.error("Ad not ready yet.");
+            setIsAdLoading(false);
         }
-        setIsAdLoading(false);
     }
 
     const handlePayoutRequest = async (reward: any) => {
@@ -277,10 +296,16 @@ export default function BingoXGame() {
     }
 
     const nextRound = async () => {
-        try {
-            await AdMob.showInterstitialAd();
-            await AdMob.prepareInterstitialAd({ adId: CONFIG.ADMOB_INTERSTITIAL_ID, isTesting: CONFIG.IS_TESTING });
-        } catch (e) {}
+        const newRoundCount = roundCounter + 1;
+        setRoundCounter(newRoundCount);
+
+        if (newRoundCount % 3 === 0) {
+            try {
+                await AdMob.showInterstitialAd();
+                await AdMob.prepareInterstitialAd({ adId: CONFIG.ADMOB_INTERSTITIAL_ID, isTesting: CONFIG.IS_TESTING });
+            } catch (e) {}
+        }
+
         setBoard(BingoEngine.generateBoard());
         setCalledNumbers([]);
         setCurrentCall(null);
@@ -454,7 +479,7 @@ export default function BingoXGame() {
                                     <span className="font-black text-xl italic uppercase leading-none mb-1">Double JS</span>
                                     <span className="text-[10px] opacity-40 font-bold uppercase tracking-widest">2x Points per daub</span>
                                 </div>
-                                <button className="bg-primary text-black font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform">$4.99</button>
+                                <button onClick={() => purchase(PRODUCT_DOUBLE_JS)} className="bg-primary text-black font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform">$4.99</button>
                             </div>
                         </div>
                     </div>
@@ -493,7 +518,7 @@ export default function BingoXGame() {
                              <Gift className="h-12 w-12 text-emerald-400 mb-4" />
                              <h3 className="text-2xl font-black uppercase italic leading-none mb-2">Jackpot Rewards</h3>
                              <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mb-6 text-center">Redeem points for real world money</p>
-                             <button onClick={() => setActiveTab('catalog')} className="w-full bg-white text-emerald-900 font-black py-4 rounded-3xl uppercase tracking-widest text-xs active:scale-95 transition-transform">Browse Catalog</button>
+                             <button onClick={() => setActiveTab('catalog')} className="w-full bg-white text-emerald-900 font-black py-4 rounded-3xl uppercase tracking-widest text-xs active:scale-95 transition-transform pointer-events-auto">Browse Catalog</button>
                         </div>
 
                         <div className="mt-8 flex flex-col items-center gap-4 text-center">
