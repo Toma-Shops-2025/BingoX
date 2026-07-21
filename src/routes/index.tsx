@@ -30,12 +30,6 @@ const REWARDS = [
     { id: 'v10', name: '$10 Visa Card', jp: 500000, type: 'Visa' },
     { id: 'a10', name: '$10 Amazon Gift', jp: 500000, type: 'Amazon' },
     { id: 'p10', name: '$10 PayPal Cash', jp: 500000, type: 'PayPal' },
-    { id: 'v25', name: '$25 Visa Card', jp: 1250000, type: 'Visa' },
-    { id: 'a25', name: '$25 Amazon Gift', jp: 1250000, type: 'Amazon' },
-    { id: 'p25', name: '$25 PayPal Cash', jp: 1250000, type: 'PayPal' },
-    { id: 'v50', name: '$50 Visa Card', jp: 2500000, type: 'Visa' },
-    { id: 'a50', name: '$50 Amazon Gift', jp: 2500000, type: 'Amazon' },
-    { id: 'p50', name: '$50 PayPal Cash', jp: 2500000, type: 'PayPal' },
 ];
 
 export default function BingoXGame() {
@@ -46,6 +40,8 @@ export default function BingoXGame() {
     const [isMuted, setIsMuted] = useState(false)
     const [isAdPlaying, setIsAdPlaying] = useState(false)
     const [showBingoCelebration, setShowBingoCelebration] = useState(false)
+
+    // Game State
     const [board, setBoard] = useState<BingoCell[][]>(BingoEngine.generateBoard())
     const [calledNumbers, setCalledNumbers] = useState<number[]>([])
     const [currentCall, setCurrentCall] = useState<number | null>(null)
@@ -54,7 +50,6 @@ export default function BingoXGame() {
     const [gameOver, setGameOver] = useState(false)
     const [winType, setWinType] = useState<string | null>(null)
     const [progress, setProgress] = useState(0)
-    const [round, setRound] = useState(1)
     const [timeLeft, setTimeLeft] = useState(CONFIG.ROUND_TIME_LIMIT)
     const [isAdLoading, setIsAdLoading] = useState(false)
     const [completedPatterns, setCompletedPatterns] = useState<string[]>([])
@@ -65,48 +60,49 @@ export default function BingoXGame() {
     const [roundCounter, setRoundCounter] = useState(0)
     const [leaderboard, setLeaderboard] = useState<any[]>([])
 
+    // Audio Control Refs
     const bgmRef = useRef<HTMLAudioElement | null>(null)
-    const currentTrackRef = useRef<string>("")
     const callerRef = useRef<HTMLAudioElement | null>(null)
-    const isMutedRef = useRef(false)
     const isAdPlayingRef = useRef(false)
+    const isMutedRef = useRef(false)
 
-    // Sync refs for audio callbacks
-    useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
     useEffect(() => { isAdPlayingRef.current = isAdPlaying; }, [isAdPlaying]);
+    useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
-    // BGM Initialization
+    // PERSISTENT AUDIO MANAGER
     useEffect(() => {
         bgmRef.current = new Audio();
         bgmRef.current.loop = true;
-        return () => bgmRef.current?.pause();
+        bgmRef.current.volume = 0.4;
+
+        return () => {
+            bgmRef.current?.pause();
+            callerRef.current?.pause();
+        };
     }, []);
 
-    // BGM Logic
+    // BGM Selection (One time per round/view change)
     useEffect(() => {
         if (!bgmRef.current || !user) return;
-        bgmRef.current.muted = isMuted;
 
-        let targetSrc = "";
-        if (activeTab !== 'play' && !isAutoPlaying) {
-            targetSrc = "/audio/bgm/login.mp3";
-        } else if (isAutoPlaying) {
-            if (!currentTrackRef.current.includes("game")) {
-                targetSrc = `/audio/bgm/${GAME_TRACKS[Math.floor(Math.random() * GAME_TRACKS.length)]}`;
-            } else {
-                targetSrc = currentTrackRef.current;
+        let target = "";
+        if (activeTab === 'play' && isAutoPlaying) {
+            // Keep current track if it's already a game track, otherwise pick random
+            if (!bgmRef.current.src.includes('game')) {
+                target = `/audio/bgm/${GAME_TRACKS[Math.floor(Math.random() * GAME_TRACKS.length)]}`;
             }
         } else {
-            targetSrc = "/audio/bgm/login.mp3";
+            target = "/audio/bgm/login.mp3";
         }
 
-        if (targetSrc && currentTrackRef.current !== targetSrc) {
-            bgmRef.current.src = targetSrc;
-            currentTrackRef.current = targetSrc;
+        if (target && !bgmRef.current.src.endsWith(target)) {
+            bgmRef.current.src = target;
             bgmRef.current.load();
             bgmRef.current.play().catch(() => {});
         }
-    }, [user, isAutoPlaying, activeTab, isMuted, round]);
+
+        bgmRef.current.muted = isMuted;
+    }, [user, activeTab, isAutoPlaying, isMuted, roundCounter]);
 
     const playCall = useCallback((num: number) => {
         if (isAdPlayingRef.current || isMutedRef.current) return;
@@ -129,15 +125,12 @@ export default function BingoXGame() {
 
         winResult.patterns.forEach((p: any) => {
             const pKey = p.join(',');
-            setCompletedPatterns(prev => {
-                if (!prev.includes(pKey)) {
-                    extraScore += CONFIG.BINGO_BONUS;
-                    triggeredBingo = true;
-                    toast.success("BINGO!", { icon: '🔥', description: "+5,000 JS" });
-                    return [...prev, pKey];
-                }
-                return prev;
-            });
+            if (!completedPatterns.includes(pKey)) {
+                setCompletedPatterns(prev => [...prev, pKey]);
+                extraScore += CONFIG.BINGO_BONUS;
+                triggeredBingo = true;
+                toast.success("BINGO!", { icon: '🔥', description: "+5,000 JS" });
+            }
         });
 
         if (winResult.isXPattern && !hasAwardedX) {
@@ -162,9 +155,9 @@ export default function BingoXGame() {
             setTimeout(() => setShowBingoCelebration(false), 3000);
             setSessionScore(prev => prev + extraScore);
         }
-    }, [hasAwardedX, hasAwardedFullHouse]);
+    }, [completedPatterns, hasAwardedX, hasAwardedFullHouse]);
 
-    // ADMOB STABLE LISTENERS
+    // ADMOB STABILITY
     useEffect(() => {
         if (!user) return;
 
@@ -224,6 +217,7 @@ export default function BingoXGame() {
         const fListener = AdMob.addListener(RewardAdPluginEvents.FailedToLoad, () => {
             setIsAdPlaying(false);
             setIsAdLoading(false);
+            if (bgmRef.current) bgmRef.current.play().catch(() => {});
         });
 
         initAds();
@@ -236,14 +230,12 @@ export default function BingoXGame() {
 
     // GAME LOOP
     const pickNumber = useCallback(() => {
-        if (isAdPlayingRef.current || gameOver) return;
+        if (isAdPlayingRef.current || gameOver || !isAutoPlaying) return;
+
         setCalledNumbers(prev => {
             const remaining = Array.from({length: 75}, (_, i) => i + 1).filter(n => !prev.includes(n));
             if (remaining.length === 0) {
-                setGameOver(true);
-                setWinType("BOARD FULL");
-                setIsAutoPlaying(false);
-                if (sessionScore > 0) addJS(sessionScore);
+                endGame("BOARD FULL");
                 return prev;
             }
             const next = remaining[Math.floor(Math.random() * remaining.length)];
@@ -252,7 +244,7 @@ export default function BingoXGame() {
             playCall(next);
             return [next, ...prev];
         });
-    }, [gameOver, sessionScore, addJS, playCall]);
+    }, [gameOver, isAutoPlaying, playCall]);
 
     useEffect(() => {
         let interval: any;
@@ -268,10 +260,7 @@ export default function BingoXGame() {
             timer = setInterval(() => {
                 setTimeLeft(prev => {
                     if (prev <= 1) {
-                        setGameOver(true);
-                        setWinType(sessionScore > 0 ? "TIME'S UP!" : "ROUND OVER");
-                        setIsAutoPlaying(false);
-                        if (sessionScore > 0) addJS(sessionScore);
+                        endGame(sessionScore > 0 ? "TIME'S UP!" : "ROUND OVER");
                         return 0;
                     }
                     return prev - 1;
@@ -279,7 +268,7 @@ export default function BingoXGame() {
             }, 1000);
         }
         return () => clearInterval(timer);
-    }, [isAutoPlaying, gameOver, activeTab, timeLeft, sessionScore, addJS]);
+    }, [isAutoPlaying, gameOver, activeTab, timeLeft, sessionScore]);
 
     useEffect(() => {
         if (isAutoPlaying && activeTab === 'play') {
@@ -288,15 +277,12 @@ export default function BingoXGame() {
         }
     }, [isAutoPlaying, activeTab]);
 
-    useEffect(() => {
-        if (activeTab === 'payout' && supabase) {
-            const getLeaderboard = async () => {
-                const { data } = await supabase.from('profiles').select('username, jackpot_score').order('jackpot_score', { ascending: false }).limit(5);
-                if (data) setLeaderboard(data);
-            };
-            getLeaderboard();
-        }
-    }, [activeTab, supabase]);
+    const endGame = (msg: string) => {
+        setGameOver(true);
+        setWinType(msg);
+        setIsAutoPlaying(false);
+        if (sessionScore > 0) addJS(sessionScore);
+    };
 
     const markCell = (r: number, c: number) => {
         if (gameOver || isAdPlaying) return;
@@ -320,7 +306,7 @@ export default function BingoXGame() {
     }
 
     const handleRewardBoost = async () => {
-        if (!isAutoPlaying || gameOver || isAdLoading) return;
+        if (gameOver || isAdLoading) return;
         setIsAdLoading(true);
         setIsAdPlaying(true);
         if (bgmRef.current) bgmRef.current.pause();
@@ -346,7 +332,6 @@ export default function BingoXGame() {
         setCurrentCall(null);
         setGameOver(false);
         setWinType(null);
-        setRound(r => r + 1);
         setIsAutoPlaying(false);
         setTimeLeft(CONFIG.ROUND_TIME_LIMIT);
         setSessionScore(0);
@@ -357,19 +342,21 @@ export default function BingoXGame() {
         setHasWildCard(false);
     }
 
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [username, setUsername] = useState('');
-    const [isLogin, setIsLogin] = useState(true);
-    const [showPass, setShowPass] = useState(false);
-    const [agreed, setAgreed] = useState(false);
+    // Fetch Leaderboard
+    useEffect(() => {
+        if (activeTab === 'payout' && supabase) {
+            const getLeaderboard = async () => {
+                const { data } = await supabase.from('profiles').select('username, jackpot_score').order('jackpot_score', { ascending: false }).limit(5);
+                if (data) setLeaderboard(data);
+            };
+            getLeaderboard();
+        }
+    }, [activeTab, supabase]);
 
     const handlePayoutRequest = async (reward: any) => {
         if ((profile?.jackpot_score || 0) < reward.jp) return;
-
         const confirmPay = confirm(`Redeem ${reward.jp.toLocaleString()} JS for a ${reward.name}?`);
         if (!confirmPay) return;
-
         try {
             const { error: reqError } = await supabase.from('payout_requests').insert({
                 user_id: user?.id,
@@ -380,10 +367,15 @@ export default function BingoXGame() {
             if (reqError) throw reqError;
             await addJS(-reward.jp);
             toast.success("Payout Requested! Check your email.");
-        } catch (e: any) {
-            alert("Error: " + e.message);
-        }
+        } catch (e: any) { alert("Error: " + e.message); }
     }
+
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [usernameInput, setUsernameInput] = useState('');
+    const [isLogin, setIsLogin] = useState(true);
+    const [showPass, setShowPass] = useState(false);
+    const [agreed, setAgreed] = useState(false);
 
     if (loading) return <div className="h-screen w-full bg-[#050510] flex items-center justify-center text-white"><Loader2 className="animate-spin text-primary" /></div>;
 
@@ -393,11 +385,11 @@ export default function BingoXGame() {
                 <img src="logo.png" className="w-48 h-48 mb-6 drop-shadow-glow" alt="Logo" />
                 <h1 className="text-5xl font-black italic mb-2 text-primary tracking-tighter uppercase text-center leading-none">Bingo X</h1>
                 <p className="text-white/40 uppercase tracking-[0.4em] text-[9px] mb-12 font-bold text-center">Skill Edition</p>
-                <form onSubmit={(e) => { e.preventDefault(); if (!isLogin && !agreed) return toast.error("Agree to terms."); isLogin ? signIn(email, password) : signUp(email, password, username); }} className="w-full max-w-sm space-y-3">
+                <form onSubmit={(e) => { e.preventDefault(); if (!isLogin && !agreed) return toast.error("Agree to terms."); isLogin ? signIn(email, password) : signUp(email, password, usernameInput); }} className="w-full max-w-sm space-y-3">
                     {!isLogin && (
                         <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
                             <UserIcon className="h-5 w-5 text-white/20 mr-3" />
-                            <input type="text" placeholder="Username" className="bg-transparent outline-none w-full font-bold text-white" value={username} onChange={e => setUsername(e.target.value)} required />
+                            <input type="text" placeholder="Username" className="bg-transparent outline-none w-full font-bold text-white" value={usernameInput} onChange={e => setUsernameInput(e.target.value)} required />
                         </div>
                     )}
                     <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
@@ -445,12 +437,11 @@ export default function BingoXGame() {
 
                             <div className="flex flex-col items-end gap-3">
                                 <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-2xl flex items-center gap-2 backdrop-blur-xl">
-                                    <Flame className={cn("h-4 w-4", isDoubleScoring ? "text-orange-500 animate-pulse" : "text-primary")} />
-                                    <span className="text-xl font-black italic">{sessionScore.toLocaleString()}</span>
-                                </div>
-                                <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-2xl flex items-center gap-2 backdrop-blur-xl">
                                     <Zap className="h-4 w-4 text-yellow-400 fill-yellow-400 shadow-glow" />
-                                    <span className="text-[10px] font-black italic">{(profile?.jackpot_score || 0).toLocaleString()} JS</span>
+                                    <span className="text-xl font-black italic">{(profile?.jackpot_score || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="bg-white/10 px-3 py-1 rounded-full text-[10px] font-black italic text-primary border border-primary/20">
+                                    ROUND: {sessionScore.toLocaleString()}
                                 </div>
                                 <div className={cn(
                                     "flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black italic border",
@@ -527,7 +518,7 @@ export default function BingoXGame() {
                         <div className="flex gap-4 w-full px-4 mb-4">
                             <button
                                 onClick={handleRewardBoost}
-                                disabled={isAdLoading || !isAutoPlaying}
+                                disabled={isAdLoading}
                                 className="flex-1 py-4 bg-purple-600/20 border-2 border-purple-500/40 rounded-3xl flex items-center justify-center gap-2 font-black italic uppercase text-xs active:scale-95 transition-all disabled:opacity-50"
                             >
                                 {isAdLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-purple-400" />}
@@ -587,33 +578,6 @@ export default function BingoXGame() {
                     </div>
                 )}
 
-                {activeTab === 'how_to_play' && (
-                    <div className="w-full py-8 animate-in slide-in-from-right duration-300 text-left">
-                        <button onClick={() => setActiveTab('payout')} className="flex items-center gap-2 text-white/30 uppercase font-black text-[10px] mb-8 active:scale-90"><ArrowLeft className="h-4 w-4" /> Back</button>
-                        <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-emerald-400 text-center">Rules</h2>
-                        <div className="bg-white/5 border border-white/10 p-8 rounded-[40px] space-y-6">
-                            <section>
-                                <h3 className="text-primary font-black uppercase text-xs mb-2 italic tracking-widest">Winning Patterns</h3>
-                                <ul className="text-sm text-white/60 space-y-2 font-bold uppercase">
-                                    <li>• 5 in a row (+5,000 JS)</li>
-                                    <li>• 4 Corners (+5,000 JS)</li>
-                                    <li>• X-Pattern (+15,000 JS Bonus!)</li>
-                                    <li>• Full House (+5,000 JS Bonus!)</li>
-                                </ul>
-                            </section>
-                            <section>
-                                <h3 className="text-primary font-black uppercase text-xs mb-2 italic tracking-widest">Lucky Daub Bonuses</h3>
-                                <ul className="text-xs text-white/60 space-y-1 font-bold uppercase">
-                                    <li>• WILD CARD: Pick any cell to mark!</li>
-                                    <li>• AUTO DAUB 2: Marks two numbers for you.</li>
-                                    <li>• +10 SECONDS: More time on the clock.</li>
-                                    <li>• 2X POINTS: Double scores for 15s!</li>
-                                </ul>
-                            </section>
-                        </div>
-                    </div>
-                )}
-
                 {activeTab === 'payout' && (
                     <div className="w-full py-8 animate-in slide-in-from-right duration-300 px-2">
                         <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-emerald-400 text-center">Wins</h2>
@@ -655,6 +619,33 @@ export default function BingoXGame() {
                         <div className="mt-8 flex flex-col items-center gap-4 text-center">
                             <div className="text-[10px] font-bold opacity-30 uppercase tracking-[0.2em]">Active Player</div>
                             <span className="text-xl font-black italic border-b border-primary pb-1 text-primary">{profile?.username || 'Gamer'}</span>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'how_to_play' && (
+                    <div className="w-full py-8 animate-in slide-in-from-right duration-300 text-left">
+                        <button onClick={() => setActiveTab('payout')} className="flex items-center gap-2 text-white/30 uppercase font-black text-[10px] mb-8 active:scale-90"><ArrowLeft className="h-4 w-4" /> Back</button>
+                        <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-emerald-400 text-center">Rules</h2>
+                        <div className="bg-white/5 border border-white/10 p-8 rounded-[40px] space-y-6">
+                            <section>
+                                <h3 className="text-primary font-black uppercase text-xs mb-2 italic tracking-widest">Winning Patterns</h3>
+                                <ul className="text-sm text-white/60 space-y-2 font-bold uppercase">
+                                    <li>• 5 in a row (+5,000 JS)</li>
+                                    <li>• 4 Corners (+5,000 JS)</li>
+                                    <li>• X-Pattern (+15,000 JS Bonus!)</li>
+                                    <li>• Full House (+5,000 JS Bonus!)</li>
+                                </ul>
+                            </section>
+                            <section>
+                                <h3 className="text-primary font-black uppercase text-xs mb-2 italic tracking-widest">Lucky Daub Bonuses</h3>
+                                <ul className="text-xs text-white/60 space-y-1 font-bold uppercase">
+                                    <li>• WILD CARD: Pick any cell to mark!</li>
+                                    <li>• AUTO DAUB 2: Marks two numbers for you.</li>
+                                    <li>• +10 SECONDS: More time on the clock.</li>
+                                    <li>• 2X POINTS: Double scores for 15s!</li>
+                                </ul>
+                            </section>
                         </div>
                     </div>
                 )}

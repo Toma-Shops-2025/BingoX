@@ -7,40 +7,67 @@ export function useBilling(addJS: (n: number) => void) {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    const CdvPurchase = (window as any).CdvPurchase;
-    if (!CdvPurchase || !CdvPurchase.store) return;
-    const store = CdvPurchase.store;
+    const initStore = async () => {
+        const CdvPurchase = (window as any).CdvPurchase;
+        if (!CdvPurchase || !CdvPurchase.store) {
+            console.log("Billing: Store not found on window.");
+            return;
+        }
 
-    store.register([
-      { id: PRODUCT_DOUBLE_JS, type: CdvPurchase.ProductType.NON_CONSUMABLE, platform: CdvPurchase.Platform.GOOGLE_PLAY },
-    ]);
+        const store = CdvPurchase.store;
+        console.log("Billing: Initializing...");
 
-    store.when().approved((tx: any) => {
-      if (tx.productId === PRODUCT_DOUBLE_JS) {
-          // You might want to handle this differently for a "Permanent" boost
-          // e.g., saving a flag in your Supabase profile
-          toast.success("Double JS Activated!");
-      }
-      tx.verify();
-      tx.finish();
-    });
+        // Register Product
+        store.register({
+            id: PRODUCT_DOUBLE_JS,
+            type: CdvPurchase.ProductType.NON_CONSUMABLE,
+            platform: CdvPurchase.Platform.GOOGLE_PLAY,
+        });
 
-    store.ready(() => setIsReady(true));
-    store.initialize([CdvPurchase.Platform.GOOGLE_PLAY]);
-  }, [addJS]);
+        store.when().approved((tx: any) => {
+            console.log("Billing: Approved!", tx.productId);
+            if (tx.productId === PRODUCT_DOUBLE_JS) {
+                toast.success("Double JS Activated Permanently!");
+                // You could save this state to Supabase here
+            }
+            tx.verify();
+            tx.finish();
+        });
+
+        store.when().verified((p: any) => p.finish());
+
+        store.error((err: any) => {
+            console.error("Billing Error:", err.code, err.message);
+        });
+
+        store.ready(() => {
+            console.log("Billing: Ready!");
+            setIsReady(true);
+        });
+
+        try {
+            await store.initialize([CdvPurchase.Platform.GOOGLE_PLAY]);
+            await store.update();
+        } catch (e) {
+            console.error("Billing: Init Failed", e);
+        }
+    };
+
+    initStore();
+  }, []);
 
   const purchase = (id: string) => {
     const CdvPurchase = (window as any).CdvPurchase;
-    if (!CdvPurchase) return toast.error("Hardware billing not detected.");
+    if (!CdvPurchase || !CdvPurchase.store) return toast.error("Billing service not available.");
 
-    const store = CdvPurchase.store;
-    const p = store.get(id);
-
+    const p = CdvPurchase.store.get(id);
     if (p) {
-        store.order(p);
+        console.log("Billing: Ordering", id);
+        CdvPurchase.store.order(p);
     } else {
-        store.update();
-        toast.info("Connecting to Google Play... try again in 5 seconds");
+        console.log("Billing: Product not found, updating...");
+        CdvPurchase.store.update();
+        toast.info("Connecting to Play Store... try again in a moment.");
     }
   };
 

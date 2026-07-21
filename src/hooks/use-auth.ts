@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { type User } from '@supabase/supabase-js';
-import { toast } from 'sonner';
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -10,7 +9,18 @@ export function useAuth() {
 
   const fetchProfile = useCallback(async (userId: string) => {
     const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if (data) setProfile(data);
+    if (data) {
+        setProfile(data);
+    } else {
+        // Fallback: Check session if profile row doesn't exist yet
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+            setProfile({
+                username: session.user.user_metadata?.username || 'Gamer',
+                jackpot_score: 0
+            });
+        }
+    }
     setLoading(false);
   }, []);
 
@@ -48,19 +58,27 @@ export function useAuth() {
   };
 
   const addJS = useCallback(async (amount: number) => {
-    if (!user || !profile) return;
-    const newBalance = (profile.jackpot_score || 0) + amount;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+
+    // Use RPC or Upsert to be thread-safe
+    const { data: profile } = await supabase.from('profiles').select('jackpot_score').eq('id', session.user.id).single();
+    const newTotal = (profile?.jackpot_score || 0) + amount;
+
     const { error } = await supabase
       .from('profiles')
-      .update({ jackpot_score: newBalance })
-      .eq('id', user.id);
+      .upsert({
+        id: session.user.id,
+        jackpot_score: newTotal,
+        username: session.user.user_metadata?.username || 'Gamer'
+      }, { onConflict: 'id' });
 
     if (!error) {
-        setProfile((prev: any) => prev ? { ...prev, jackpot_score: newBalance } : null);
+        setProfile((prev: any) => ({ ...prev, jackpot_score: newTotal }));
         return true;
     }
     return false;
-  }, [user, profile]);
+  }, []);
 
   const signOut = async () => {
     await supabase.auth.signOut();
