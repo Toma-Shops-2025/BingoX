@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { type User } from '@supabase/supabase-js';
 import { toast } from 'sonner';
@@ -7,6 +7,12 @@ export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  const fetchProfile = useCallback(async (userId: string) => {
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    if (data) setProfile(data);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -25,29 +31,23 @@ export function useAuth() {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [fetchProfile]);
 
-  async function fetchProfile(userId: string) {
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if (data) setProfile(data);
-    setLoading(false);
-  }
-
-  async function signIn(email: string, pass: string) {
+  const signIn = async (email: string, pass: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if (error) throw error;
-  }
+  };
 
-  async function signUp(email: string, pass: string, username: string) {
+  const signUp = async (email: string, pass: string, username: string) => {
     const { data, error } = await supabase.auth.signUp({
         email,
         password: pass,
         options: { data: { username } }
     });
     if (error) throw error;
-  }
+  };
 
-  async function addJS(amount: number) {
+  const addJS = useCallback(async (amount: number) => {
     if (!user || !profile) return;
     const newBalance = (profile.jackpot_score || 0) + amount;
     const { error } = await supabase
@@ -56,15 +56,15 @@ export function useAuth() {
       .eq('id', user.id);
 
     if (!error) {
-        setProfile({ ...profile, jackpot_score: newBalance });
+        setProfile((prev: any) => prev ? { ...prev, jackpot_score: newBalance } : null);
         return true;
     }
     return false;
-  }
+  }, [user, profile]);
 
-  async function signOut() {
+  const signOut = async () => {
     await supabase.auth.signOut();
-  }
+  };
 
   return { user, profile, loading, signIn, signUp, signOut, addJS, supabase };
 }

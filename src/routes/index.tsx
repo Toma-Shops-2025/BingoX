@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { BingoEngine, BingoCell } from '@/logic/BingoEngine'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
@@ -65,155 +65,202 @@ export default function BingoXGame() {
     const [roundCounter, setRoundCounter] = useState(0)
     const [leaderboard, setLeaderboard] = useState<any[]>([])
 
-    // Auth Form State
-    const [email, setEmail] = useState('')
-    const [password, setPassword] = useState('')
-    const [username, setUsername] = useState('')
-    const [isLogin, setIsLogin] = useState(true)
-    const [showPass, setShowPass] = useState(false)
-    const [agreed, setAgreed] = useState(false)
-
     const bgmRef = useRef<HTMLAudioElement | null>(null)
     const currentTrackRef = useRef<string>("")
+    const callerRef = useRef<HTMLAudioElement | null>(null)
+    const isMutedRef = useRef(false)
+    const isAdPlayingRef = useRef(false)
 
-    // Initialize BGM
+    // Sync refs for audio callbacks
+    useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+    useEffect(() => { isAdPlayingRef.current = isAdPlaying; }, [isAdPlaying]);
+
+    // BGM Initialization
     useEffect(() => {
         bgmRef.current = new Audio();
         bgmRef.current.loop = true;
-        const unlockAudio = () => {
-            if (bgmRef.current && bgmRef.current.paused) {
-                bgmRef.current.play().catch(() => {});
-                document.removeEventListener('click', unlockAudio);
-            }
-        };
-        document.addEventListener('click', unlockAudio);
-        return () => {
-            bgmRef.current?.pause();
-            document.removeEventListener('click', unlockAudio);
-        }
+        return () => bgmRef.current?.pause();
     }, []);
 
-    // BGM Control
+    // BGM Logic
     useEffect(() => {
-        if (!bgmRef.current) return;
+        if (!bgmRef.current || !user) return;
         bgmRef.current.muted = isMuted;
+
         let targetSrc = "";
-        if (!user || (activeTab !== 'play' && !isAutoPlaying)) {
+        if (activeTab !== 'play' && !isAutoPlaying) {
             targetSrc = "/audio/bgm/login.mp3";
         } else if (isAutoPlaying) {
             if (!currentTrackRef.current.includes("game")) {
-                const randomTrack = GAME_TRACKS[Math.floor(Math.random() * GAME_TRACKS.length)];
-                targetSrc = `/audio/bgm/${randomTrack}`;
+                targetSrc = `/audio/bgm/${GAME_TRACKS[Math.floor(Math.random() * GAME_TRACKS.length)]}`;
             } else {
                 targetSrc = currentTrackRef.current;
             }
         } else {
             targetSrc = "/audio/bgm/login.mp3";
         }
+
         if (targetSrc && currentTrackRef.current !== targetSrc) {
             bgmRef.current.src = targetSrc;
             currentTrackRef.current = targetSrc;
             bgmRef.current.load();
             bgmRef.current.play().catch(() => {});
         }
-    }, [user, isAutoPlaying, activeTab, isMuted]); // Added isMuted to dependencies
+    }, [user, isAutoPlaying, activeTab, isMuted, round]);
 
-    // ADMOB INITIALIZATION
+    const playCall = useCallback((num: number) => {
+        if (isAdPlayingRef.current || isMutedRef.current) return;
+
+        if (callerRef.current) {
+            callerRef.current.pause();
+            callerRef.current.currentTime = 0;
+        }
+
+        let prefix = num <= 15 ? "B" : num <= 30 ? "I" : num <= 45 ? "N" : num <= 60 ? "G" : "O";
+        const audio = new Audio(`/audio/calls/${prefix}-${num}.MP3`);
+        audio.muted = isMutedRef.current;
+        callerRef.current = audio;
+        audio.play().catch(() => {});
+    }, []);
+
+    const processWins = useCallback((winResult: any) => {
+        let extraScore = 0;
+        let triggeredBingo = false;
+
+        winResult.patterns.forEach((p: any) => {
+            const pKey = p.join(',');
+            setCompletedPatterns(prev => {
+                if (!prev.includes(pKey)) {
+                    extraScore += CONFIG.BINGO_BONUS;
+                    triggeredBingo = true;
+                    toast.success("BINGO!", { icon: '🔥', description: "+5,000 JS" });
+                    return [...prev, pKey];
+                }
+                return prev;
+            });
+        });
+
+        if (winResult.isXPattern && !hasAwardedX) {
+            extraScore += CONFIG.X_PATTERN_BONUS;
+            setHasAwardedX(true);
+            triggeredBingo = true;
+            toast.success("X-PATTERN BONUS!", { icon: '💎', description: "+15,000 JS" });
+            new Audio('/audio/sfx/jackpot.mp3').play().catch(() => {});
+        }
+
+        if (winResult.isFullHouse && !hasAwardedFullHouse) {
+            extraScore += 5000;
+            setHasAwardedFullHouse(true);
+            triggeredBingo = true;
+            toast.success("FULL HOUSE!", { icon: '🏆', description: "+5,000 JS" });
+            new Audio('/audio/sfx/jackpot.mp3').play().catch(() => {});
+        }
+
+        if (triggeredBingo) {
+            new Audio('/audio/sfx/bingo.mp3').play().catch(() => {});
+            setShowBingoCelebration(true);
+            setTimeout(() => setShowBingoCelebration(false), 3000);
+            setSessionScore(prev => prev + extraScore);
+        }
+    }, [hasAwardedX, hasAwardedFullHouse]);
+
+    // ADMOB STABLE LISTENERS
     useEffect(() => {
+        if (!user) return;
+
         const initAds = async () => {
             try {
                 await AdMob.initialize();
                 await AdMob.prepareInterstitialAd({ adId: CONFIG.ADMOB_INTERSTITIAL_ID, isTesting: CONFIG.IS_TESTING });
                 await AdMob.prepareRewardVideoAd({ adId: CONFIG.ADMOB_REWARDED_ID, isTesting: CONFIG.IS_TESTING });
-
-                // Banner at the very top
                 await AdMob.showBanner({
                     adId: CONFIG.ADMOB_BANNER_ID,
                     position: BannerAdPosition.TOP_CENTER,
                     size: BannerAdSize.BANNER,
                     isTesting: CONFIG.IS_TESTING,
-                    margin: 0
+                    margin: 40
                 });
-            } catch (e) { console.log("AdMob failed", e); }
+            } catch (e) {}
         };
 
         const rListener = AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
-            console.log("Reward Granted from global listener");
             setIsAdPlaying(false);
+            if (bgmRef.current) bgmRef.current.play().catch(() => {});
 
-            // Fix: Ensure music resumes and is unmuted
-            if (bgmRef.current) {
-                bgmRef.current.muted = isMuted;
-                bgmRef.current.play().catch(() => {});
-            }
-
-            const bonuses = ['FREE_DAUB', 'AUTO_DAUB', 'TIME_EXTEND', 'DOUBLE_SCORE'];
+            const bonuses = ['WILD', 'AUTO', 'TIME', 'DOUBLE'];
             const chosen = bonuses[Math.floor(Math.random() * bonuses.length)];
 
-            if (chosen === 'FREE_DAUB') {
+            if (chosen === 'WILD') {
                 setHasWildCard(true);
-                toast.success("Lucky Daub: FREE WILD CARD!", { icon: '✨', description: 'Mark any cell on the board!' });
-            }
-            else if (chosen === 'AUTO_DAUB') {
-                const newBoard = [...board];
-                let count = 0;
-                // Shuffle available indices
-                const indices: {r: number, c: number}[] = [];
-                for(let r=0; r<5; r++) for(let c=0; c<5; c++) if(!newBoard[r][c].marked) indices.push({r,c});
-
-                const toMark = indices.sort(() => Math.random() - 0.5).slice(0, 2);
-                toMark.forEach(idx => {
-                    newBoard[idx.r][idx.c].marked = true;
+                toast.success("Lucky Daub: WILD CARD!", { icon: '✨', description: 'Mark any cell!' });
+            } else if (chosen === 'AUTO') {
+                setBoard(prev => {
+                    const nextBoard = [...prev];
+                    const targets: {r:number, c:number}[] = [];
+                    nextBoard.forEach((row, r) => row.forEach((cell, c) => { if(!cell.marked) targets.push({r,c}) }));
+                    targets.sort(() => Math.random() - 0.5).slice(0, 2).forEach(t => nextBoard[t.r][t.c].marked = true);
+                    const winResult = BingoEngine.checkWins(nextBoard);
+                    processWins(winResult);
+                    return nextBoard;
                 });
-
-                setBoard(newBoard);
                 toast.success("Lucky Daub: AUTO DAUB 2!", { icon: '🤖' });
-                const winResult = BingoEngine.checkWins(newBoard);
-                processWins(winResult);
-            }
-            else if (chosen === 'TIME_EXTEND') {
+            } else if (chosen === 'TIME') {
                 setTimeLeft(prev => prev + 10);
                 toast.success("Lucky Daub: +10 SECONDS!", { icon: '⏰' });
-            }
-            else if (chosen === 'DOUBLE_SCORE') {
+            } else {
                 setIsDoubleScoring(true);
                 setTimeout(() => setIsDoubleScoring(false), 15000);
                 toast.success("Lucky Daub: 2X POINTS (15s)!", { icon: '🔥' });
             }
-
             setIsAdLoading(false);
         });
 
-        const fListener = AdMob.addListener(RewardAdPluginEvents.FailedToLoad, () => {
-            setIsAdLoading(false);
-            setIsAdPlaying(false);
-        });
         const dListener = AdMob.addListener(RewardAdPluginEvents.Dismissed, () => {
-            setIsAdLoading(false);
             setIsAdPlaying(false);
+            setIsAdLoading(false);
             if (bgmRef.current) bgmRef.current.play().catch(() => {});
         });
 
-        if (user) initAds();
-        else {
-          try { AdMob.hideBanner(); } catch(e) {}
-        }
+        const fListener = AdMob.addListener(RewardAdPluginEvents.FailedToLoad, () => {
+            setIsAdPlaying(false);
+            setIsAdLoading(false);
+        });
 
+        initAds();
         return () => {
             rListener.remove();
-            fListener.remove();
             dListener.remove();
+            fListener.remove();
         }
-    }, [user, board, calledNumbers, isMuted]);
+    }, [user, processWins]);
 
-    // Game Loops
+    // GAME LOOP
+    const pickNumber = useCallback(() => {
+        if (isAdPlayingRef.current || gameOver) return;
+        setCalledNumbers(prev => {
+            const remaining = Array.from({length: 75}, (_, i) => i + 1).filter(n => !prev.includes(n));
+            if (remaining.length === 0) {
+                setGameOver(true);
+                setWinType("BOARD FULL");
+                setIsAutoPlaying(false);
+                if (sessionScore > 0) addJS(sessionScore);
+                return prev;
+            }
+            const next = remaining[Math.floor(Math.random() * remaining.length)];
+            setCurrentCall(next);
+            setProgress(0);
+            playCall(next);
+            return [next, ...prev];
+        });
+    }, [gameOver, sessionScore, addJS, playCall]);
+
     useEffect(() => {
         let interval: any;
         if (isAutoPlaying && !gameOver && activeTab === 'play') {
-            interval = setInterval(() => { pickNumber(); }, 3500); // Faster calling: 3.5 seconds
+            interval = setInterval(pickNumber, 3500);
         }
         return () => clearInterval(interval);
-    }, [isAutoPlaying, calledNumbers, gameOver, activeTab]);
+    }, [isAutoPlaying, gameOver, activeTab, pickNumber]);
 
     useEffect(() => {
         let timer: any;
@@ -232,62 +279,28 @@ export default function BingoXGame() {
             }, 1000);
         }
         return () => clearInterval(timer);
-    }, [isAutoPlaying, gameOver, activeTab, timeLeft, sessionScore]);
+    }, [isAutoPlaying, gameOver, activeTab, timeLeft, sessionScore, addJS]);
 
     useEffect(() => {
         if (isAutoPlaying && activeTab === 'play') {
-            const timer = setInterval(() => {
-                // Progress matches the 3.5s interval (100 / 35 steps)
-                setProgress(prev => (prev >= 100 ? 0 : prev + 2.86));
-            }, 100);
+            const timer = setInterval(() => setProgress(prev => (prev >= 100 ? 0 : prev + 2.86)), 100);
             return () => clearInterval(timer);
         }
-    }, [isAutoPlaying, currentCall, activeTab]);
+    }, [isAutoPlaying, activeTab]);
 
-    // Fetch Leaderboard
     useEffect(() => {
         if (activeTab === 'payout' && supabase) {
             const getLeaderboard = async () => {
-                const { data } = await supabase
-                    .from('profiles')
-                    .select('username, jackpot_score')
-                    .order('jackpot_score', { ascending: false })
-                    .limit(5);
+                const { data } = await supabase.from('profiles').select('username, jackpot_score').order('jackpot_score', { ascending: false }).limit(5);
                 if (data) setLeaderboard(data);
             };
             getLeaderboard();
         }
-    }, [activeTab]);
-
-    const pickNumber = () => {
-        if (isAdPlaying) return;
-        const remaining = Array.from({length: 75}, (_, i) => i + 1).filter(n => !calledNumbers.includes(n));
-        if (remaining.length === 0) {
-            setGameOver(true);
-            setWinType("BOARD FULL");
-            setIsAutoPlaying(false);
-            if (sessionScore > 0) addJS(sessionScore);
-            return;
-        }
-        const next = remaining[Math.floor(Math.random() * remaining.length)];
-        setCalledNumbers(prev => [next, ...prev]);
-        setCurrentCall(next);
-        setProgress(0);
-        playCall(next);
-    }
-
-    const playCall = (num: number) => {
-        if (isAdPlaying) return;
-        let prefix = num <= 15 ? "B" : num <= 30 ? "I" : num <= 45 ? "N" : num <= 60 ? "G" : "O";
-        const audio = new Audio(`/audio/calls/${prefix}-${num}.MP3`);
-        audio.play().catch(() => {});
-    }
+    }, [activeTab, supabase]);
 
     const markCell = (r: number, c: number) => {
         if (gameOver || isAdPlaying) return;
         const cell = board[r][c];
-
-        // Allowed to mark if number was called, OR if it's FREE, OR if player has a Wild Card active
         if (cell.number === "FREE" || calledNumbers.includes(cell.number as number) || hasWildCard) {
             if (cell.marked) return;
             const newBoard = [...board];
@@ -295,71 +308,14 @@ export default function BingoXGame() {
             setBoard(newBoard);
 
             const speedBonus = Math.floor((100 - progress) * 5);
-            let earnedThisDaub = CONFIG.POINTS_PER_DAUB + speedBonus;
-            if (isDoubleScoring) earnedThisDaub *= 2;
+            let earned = CONFIG.POINTS_PER_DAUB + speedBonus;
+            if (isDoubleScoring) earned *= 2;
+            setSessionScore(prev => prev + earned);
 
-            setSessionScore(prev => prev + earnedThisDaub);
-
-            // Consume wild card if used on a non-called number
-            if (hasWildCard && cell.number !== "FREE" && !calledNumbers.includes(cell.number as number)) {
-                setHasWildCard(false);
-            }
+            if (hasWildCard && cell.number !== "FREE" && !calledNumbers.includes(cell.number as number)) setHasWildCard(false);
 
             const winResult = BingoEngine.checkWins(newBoard);
             processWins(winResult);
-        }
-    }
-
-    const processWins = (winResult: any) => {
-        let extraScore = 0;
-        let triggeredBingo = false;
-
-        winResult.patterns.forEach((p: any) => {
-            const pKey = p.join(',');
-            if (!completedPatterns.includes(pKey)) {
-                extraScore += CONFIG.BINGO_BONUS;
-                setCompletedPatterns(prev => [...prev, pKey]);
-                triggeredBingo = true;
-                toast.success("BINGO!", {
-                    icon: '🔥',
-                    description: "Five in a row! +5,000 JS",
-                    duration: 4000
-                });
-            }
-        });
-
-        if (winResult.isXPattern && !hasAwardedX) {
-            extraScore += CONFIG.X_PATTERN_BONUS;
-            setHasAwardedX(true);
-            triggeredBingo = true;
-            toast.success("X-PATTERN BONUS!", {
-                icon: '💎',
-                description: "Massive Win! +15,000 JS",
-                duration: 5000
-            });
-            new Audio('/audio/sfx/jackpot.mp3').play().catch(() => {});
-        }
-
-        if (winResult.isFullHouse && !hasAwardedFullHouse) {
-            extraScore += 5000;
-            setHasAwardedFullHouse(true);
-            triggeredBingo = true;
-            toast.success("FULL HOUSE!", {
-                icon: '🏆',
-                description: "Amazing! +5,000 JS",
-                duration: 5000
-            });
-            new Audio('/audio/sfx/jackpot.mp3').play().catch(() => {});
-        }
-
-        if (triggeredBingo) {
-            new Audio('/audio/sfx/bingo.mp3').play().catch(() => {});
-            setShowBingoCelebration(true);
-            setTimeout(() => setShowBingoCelebration(false), 3000);
-        }
-
-        if (extraScore > 0) {
-            setSessionScore(prev => prev + extraScore);
         }
     }
 
@@ -368,8 +324,8 @@ export default function BingoXGame() {
         setIsAdLoading(true);
         setIsAdPlaying(true);
         if (bgmRef.current) bgmRef.current.pause();
+        if (callerRef.current) callerRef.current.pause();
         try {
-            await AdMob.prepareRewardVideoAd({ adId: CONFIG.ADMOB_REWARDED_ID, isTesting: CONFIG.IS_TESTING });
             await AdMob.showRewardVideoAd();
         } catch (e) {
             toast.error("Ad not ready yet.");
@@ -378,6 +334,35 @@ export default function BingoXGame() {
             if (bgmRef.current) bgmRef.current.play().catch(() => {});
         }
     }
+
+    const nextRound = async () => {
+        const nextRC = roundCounter + 1;
+        setRoundCounter(nextRC);
+        if (nextRC % 2 === 0) {
+            try { await AdMob.showInterstitialAd(); } catch (e) {}
+        }
+        setBoard(BingoEngine.generateBoard());
+        setCalledNumbers([]);
+        setCurrentCall(null);
+        setGameOver(false);
+        setWinType(null);
+        setRound(r => r + 1);
+        setIsAutoPlaying(false);
+        setTimeLeft(CONFIG.ROUND_TIME_LIMIT);
+        setSessionScore(0);
+        setCompletedPatterns([]);
+        setHasAwardedX(false);
+        setHasAwardedFullHouse(false);
+        setIsDoubleScoring(false);
+        setHasWildCard(false);
+    }
+
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [username, setUsername] = useState('');
+    const [isLogin, setIsLogin] = useState(true);
+    const [showPass, setShowPass] = useState(false);
+    const [agreed, setAgreed] = useState(false);
 
     const handlePayoutRequest = async (reward: any) => {
         if ((profile?.jackpot_score || 0) < reward.jp) return;
@@ -400,63 +385,26 @@ export default function BingoXGame() {
         }
     }
 
-    const nextRound = async () => {
-        const newRoundCount = roundCounter + 1;
-        setRoundCounter(newRoundCount);
-
-        if (newRoundCount % 2 === 0) { // Every 2 rounds
-            try {
-                await AdMob.showInterstitialAd();
-                await AdMob.prepareInterstitialAd({ adId: CONFIG.ADMOB_INTERSTITIAL_ID, isTesting: CONFIG.IS_TESTING });
-            } catch (e) {}
-        }
-
-        // Shuffle BGM for new round
-        if (bgmRef.current) {
-            const randomTrack = GAME_TRACKS[Math.floor(Math.random() * GAME_TRACKS.length)];
-            bgmRef.current.src = `/audio/bgm/${randomTrack}`;
-            bgmRef.current.load();
-            if (isAutoPlaying) bgmRef.current.play().catch(() => {});
-        }
-
-        setBoard(BingoEngine.generateBoard());
-        setCalledNumbers([]);
-        setCurrentCall(null);
-        setGameOver(false);
-        setWinType(null);
-        setRound(r => r + 1);
-        setIsAutoPlaying(false);
-        setTimeLeft(CONFIG.ROUND_TIME_LIMIT);
-        setSessionScore(0);
-        setCompletedPatterns([]);
-        setHasAwardedX(false);
-        setHasAwardedFullHouse(false);
-        setIsDoubleScoring(false);
-        setHasWildCard(false);
-    }
-
     if (loading) return <div className="h-screen w-full bg-[#050510] flex items-center justify-center text-white"><Loader2 className="animate-spin text-primary" /></div>;
 
     if (!user) {
         return (
             <div className="h-screen w-full bg-[#050510] flex flex-col items-center justify-center p-8 text-white relative">
-                <img src="logo.png" className="w-48 h-48 mb-6 drop-shadow-glow animate-in zoom-in duration-700" alt="Bingo X Logo" />
-                <h1 className="text-5xl font-black italic mb-2 text-primary tracking-tighter shadow-glow uppercase text-center leading-none">Bingo X</h1>
+                <img src="logo.png" className="w-48 h-48 mb-6 drop-shadow-glow" alt="Logo" />
+                <h1 className="text-5xl font-black italic mb-2 text-primary tracking-tighter uppercase text-center leading-none">Bingo X</h1>
                 <p className="text-white/40 uppercase tracking-[0.4em] text-[9px] mb-12 font-bold text-center">Skill Edition</p>
-                <form onSubmit={(e) => { e.preventDefault(); if (!isLogin && !agreed) return toast.error("Please agree to the terms."); isLogin ? signIn(email, password) : signUp(email, password, username); }} className="w-full max-w-sm space-y-3">
+                <form onSubmit={(e) => { e.preventDefault(); if (!isLogin && !agreed) return toast.error("Agree to terms."); isLogin ? signIn(email, password) : signUp(email, password, username); }} className="w-full max-w-sm space-y-3">
                     {!isLogin && (
-                        <>
-                            <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4 focus-within:border-primary/50 transition-colors">
-                                <UserIcon className="h-5 w-5 text-white/20 mr-3" />
-                                <input type="text" placeholder="Username" className="bg-transparent outline-none w-full font-bold text-white" value={username} onChange={e => setUsername(e.target.value)} required />
-                            </div>
-                        </>
+                        <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
+                            <UserIcon className="h-5 w-5 text-white/20 mr-3" />
+                            <input type="text" placeholder="Username" className="bg-transparent outline-none w-full font-bold text-white" value={username} onChange={e => setUsername(e.target.value)} required />
+                        </div>
                     )}
-                    <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4 focus-within:border-primary/50 transition-colors">
+                    <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
                         <Mail className="h-5 w-5 text-white/20 mr-3" />
                         <input type="email" placeholder="Email" className="bg-transparent outline-none w-full font-bold text-white" value={email} onChange={e => setEmail(e.target.value)} required />
                     </div>
-                    <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4 focus-within:border-primary/50 transition-colors">
+                    <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
                         <Lock className="h-5 w-5 text-white/20 mr-3" />
                         <input type={showPass ? "text" : "password"} placeholder="Password" name="password" className="bg-transparent outline-none w-full font-bold text-white" value={password} onChange={e => setPassword(e.target.value)} required />
                         <button type="button" onClick={() => setShowPass(!showPass)}>{showPass ? <EyeOff className="h-4 w-4 opacity-30" /> : <Eye className="h-4 w-4 opacity-30" />}</button>
@@ -464,11 +412,11 @@ export default function BingoXGame() {
                     {!isLogin && (
                         <div className="flex items-center gap-3 px-2 py-2">
                             <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="accent-primary" />
-                            <span className="text-[10px] text-white/40 font-bold uppercase">I am 18+ and agree to Terms</span>
+                            <span className="text-[10px] text-white/40 font-bold uppercase">18+ / Agree to Terms</span>
                         </div>
                     )}
                     <button type="submit" className="w-full bg-primary py-5 rounded-3xl font-black uppercase tracking-widest shadow-glow mt-4 active:scale-95 transition-transform">{isLogin ? 'Login' : 'Create Account'}</button>
-                    <button type="button" onClick={() => setIsLogin(!isLogin)} className="w-full text-center text-xs opacity-40 font-bold uppercase mt-4 underline">{isLogin ? "New? Sign up" : "Have an account? Login"}</button>
+                    <button type="button" onClick={() => setIsLogin(!isLogin)} className="w-full text-center text-xs opacity-40 font-bold uppercase mt-4 underline">{isLogin ? "New? Sign up" : "Login"}</button>
                 </form>
             </div>
         )
@@ -547,7 +495,8 @@ export default function BingoXGame() {
                             ))}
                         </div>
 
-                        <div className="relative p-2 rounded-[45px] bg-black border-4 border-white/5 shadow-2xl mb-8">
+                        <div className={cn("relative p-2 rounded-[45px] bg-black border-4 shadow-2xl mb-8 transition-colors duration-500", hasWildCard ? "border-purple-500/50 shadow-purple-500/20" : "border-white/5")}>
+                            {hasWildCard && <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-purple-500 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase italic animate-bounce shadow-glow">Wild Card Active!</div>}
                             <div className="grid grid-cols-5 gap-1.5">
                                 {['B','I','N','G','O'].map((l, i) => (
                                     <div key={l} className={cn("w-14 h-12 flex flex-col items-center justify-center font-black text-2xl italic rounded-t-3xl", (COLUMN_THEMES as any)[i].bg, (COLUMN_THEMES as any)[i].color)}>
@@ -605,7 +554,7 @@ export default function BingoXGame() {
                             <div className="bg-white/5 border border-white/10 p-6 rounded-[40px] flex justify-between items-center shadow-xl">
                                 <div className="flex flex-col">
                                     <span className="font-black text-xl italic uppercase leading-none mb-1">Double JS</span>
-                                    <span className="text-[10px] opacity-40 font-bold uppercase tracking-widest">2x Points per daub</span>
+                                    <span className="text-[10px] opacity-40 font-bold uppercase tracking-widest">Permanent 2x Points</span>
                                 </div>
                                 <button onClick={() => purchase(PRODUCT_DOUBLE_JS)} className="bg-primary text-black font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform">$4.99</button>
                             </div>
@@ -646,44 +595,44 @@ export default function BingoXGame() {
                             <section>
                                 <h3 className="text-primary font-black uppercase text-xs mb-2 italic tracking-widest">Winning Patterns</h3>
                                 <ul className="text-sm text-white/60 space-y-2 font-bold uppercase">
-                                    <li>• 5 in a row (Horizontal, Vertical, Diagonal)</li>
-                                    <li>• 4 Corners (All four outer corner cells)</li>
-                                    <li>• X-Pattern (Both diagonals - 15,000 JS Bonus!)</li>
+                                    <li>• 5 in a row (+5,000 JS)</li>
+                                    <li>• 4 Corners (+5,000 JS)</li>
+                                    <li>• X-Pattern (+15,000 JS Bonus!)</li>
+                                    <li>• Full House (+5,000 JS Bonus!)</li>
                                 </ul>
                             </section>
                             <section>
-                                <h3 className="text-primary font-black uppercase text-xs mb-2 italic tracking-widest">Scoring</h3>
-                                <p className="text-sm text-white/60 leading-relaxed font-bold uppercase">Mark numbers as they are called to earn points. Faster marks get higher speed bonuses!</p>
-                            </section>
-                            <section>
-                                <h3 className="text-primary font-black uppercase text-xs mb-2 italic tracking-widest">Withdrawals</h3>
-                                <p className="text-sm text-white/60 leading-relaxed font-bold uppercase">Accumulate JS (Jackpot Score) and redeem them in the Prize Catalog for Visa, Amazon, or PayPal rewards.</p>
+                                <h3 className="text-primary font-black uppercase text-xs mb-2 italic tracking-widest">Lucky Daub Bonuses</h3>
+                                <ul className="text-xs text-white/60 space-y-1 font-bold uppercase">
+                                    <li>• WILD CARD: Pick any cell to mark!</li>
+                                    <li>• AUTO DAUB 2: Marks two numbers for you.</li>
+                                    <li>• +10 SECONDS: More time on the clock.</li>
+                                    <li>• 2X POINTS: Double scores for 15s!</li>
+                                </ul>
                             </section>
                         </div>
                     </div>
                 )}
 
                 {activeTab === 'payout' && (
-                    <div className="w-full py-8 animate-in slide-in-from-right duration-300">
+                    <div className="w-full py-8 animate-in slide-in-from-right duration-300 px-2">
                         <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-emerald-400 text-center">Wins</h2>
                         <div className="bg-gradient-to-br from-emerald-900 to-green-950 p-8 rounded-[50px] border-2 border-emerald-500/20 shadow-2xl relative overflow-hidden group mb-6">
-                             <div className="absolute inset-0 bg-white/5 opacity-0 group-active:opacity-100 transition-opacity" />
                              <div className="flex justify-between items-start">
                                 <Gift className="h-12 w-12 text-emerald-400 mb-4" />
-                                <div className="bg-black/20 px-4 py-2 rounded-2xl border border-white/10 text-right">
-                                    <div className="text-[8px] uppercase font-black opacity-40">Your Total</div>
+                                <div className="bg-black/40 px-4 py-2 rounded-2xl border border-white/10 text-right backdrop-blur-md">
+                                    <div className="text-[8px] uppercase font-black opacity-60 text-emerald-400">Account Total</div>
                                     <div className="text-xl font-black italic text-white">{(profile?.jackpot_score || 0).toLocaleString()} JS</div>
                                 </div>
                              </div>
                              <h3 className="text-2xl font-black uppercase italic leading-none mb-2">Jackpot Rewards</h3>
                              <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mb-6">Redeem points for real world money</p>
-                             <button onClick={() => setActiveTab('catalog')} className="w-full bg-white text-emerald-900 font-black py-4 rounded-3xl uppercase tracking-widest text-xs active:scale-95 transition-transform pointer-events-auto relative z-[100]">Browse Catalog</button>
+                             <button onClick={() => setActiveTab('catalog')} className="w-full bg-white text-emerald-900 font-black py-4 rounded-3xl uppercase tracking-widest text-xs active:scale-95 transition-transform relative z-[100]">Browse Catalog</button>
                         </div>
 
-                        {/* Additional Info Buttons */}
                         <div className="grid grid-cols-2 gap-4 mt-6">
-                            <button onClick={() => setActiveTab('how_to_play')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] active:scale-95 transition-all text-center">How to Play</button>
-                            <button onClick={() => window.open(CONFIG.PRIVACY_URL, '_blank')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] active:scale-95 transition-all text-center">Privacy</button>
+                            <button onClick={() => setActiveTab('how_to_play')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] active:scale-95 text-center">Rules</button>
+                            <button onClick={() => window.open(CONFIG.PRIVACY_URL, '_blank')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] active:scale-95 text-center">Privacy</button>
                         </div>
 
                         <div className="mt-12 bg-white/5 rounded-[40px] p-6 border-2 border-white/10">
@@ -717,7 +666,6 @@ export default function BingoXGame() {
                 <NavButton icon={Award} label="Wins" active={activeTab === 'payout'} onClick={() => setActiveTab('payout')} />
             </nav>
 
-            {/* Bingo Celebration Overlay */}
             {showBingoCelebration && (
                 <div className="fixed inset-0 z-[3000] pointer-events-none flex items-center justify-center overflow-hidden">
                     <div className="animate-bounce text-6xl font-black italic text-primary drop-shadow-[0_0_30px_rgba(34,211,238,0.8)] uppercase tracking-tighter">BINGO!</div>
@@ -727,25 +675,20 @@ export default function BingoXGame() {
                             top: `-10%`,
                             animationDelay: `${Math.random() * 2}s`,
                             backgroundColor: i % 2 === 0 ? '#22d3ee' : '#ec4899',
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%'
+                            width: '8px', height: '8px', borderRadius: '50%'
                         }} />
                     ))}
                 </div>
             )}
 
-            {/* Win/Loss Modal */}
             {gameOver && (
                 <div className="fixed inset-0 z-[2000] bg-black/95 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-700 backdrop-blur-md">
                     <Trophy className={cn("h-32 w-32 mb-8 drop-shadow-glow scale-125", sessionScore === 0 ? "text-red-500" : "text-yellow-400")} />
                     <h2 className={cn("text-7xl font-black italic mb-2 uppercase tracking-tighter leading-none", sessionScore === 0 ? "text-red-500" : "text-white")}>{winType}</h2>
                     <div className="bg-white/5 border-2 border-white/10 p-10 rounded-[50px] mb-12 relative overflow-hidden">
                         <div className={cn("absolute top-0 left-0 w-full h-1 shadow-glow", sessionScore === 0 ? "bg-red-500" : "bg-primary")} />
-                        <span className="block text-[10px] opacity-40 font-black mb-2 tracking-widest uppercase">Total Session Points</span>
-                        <span className="text-6xl font-black italic text-white drop-shadow-glow">
-                            {sessionScore.toLocaleString()}
-                        </span>
+                        <span className="block text-[10px] opacity-40 font-black mb-2 tracking-widest uppercase">Session Points</span>
+                        <span className="text-6xl font-black italic text-white drop-shadow-glow">{sessionScore.toLocaleString()}</span>
                     </div>
                     <button onClick={nextRound} className="w-full max-w-xs py-8 bg-white text-black rounded-full font-black text-2xl italic active:scale-95 transition-transform uppercase tracking-widest shadow-2xl">Continue</button>
                 </div>
