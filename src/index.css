@@ -19,6 +19,11 @@ body {
   .animate-float-slow {
     animation: float 30s ease-in-out infinite;
   }
+
+  .shadow-x-glow {
+    text-shadow: 0 0 40px rgba(34, 211, 238, 0.4), 0 0 80px rgba(34, 211, 238, 0.2);
+    filter: drop-shadow(0 0 20px rgba(34, 211, 238, 0.3));
+  }
 }
 
 @keyframes float {

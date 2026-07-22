@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { type User } from '@supabase/supabase-js';
+import { toast } from 'sonner';
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -8,33 +9,44 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if (data) {
-        setProfile(data);
-    } else {
-        // Fallback: Check session if profile row doesn't exist yet
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-            setProfile({
-                username: session.user.user_metadata?.username || 'Gamer',
-                jackpot_score: 0
-            });
+    try {
+        const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+        if (data) {
+            setProfile(data);
+        } else {
+            // Profile doesn't exist, create it from user metadata
+            const { data: { user } } = await supabase.auth.getUser();
+            const username = user?.user_metadata?.username || 'Gamer';
+            const { data: newProfile, error: createError } = await supabase
+                .from('profiles')
+                .upsert({ id: userId, username: username, jackpot_score: 0 })
+                .select()
+                .single();
+            if (newProfile) setProfile(newProfile);
         }
+    } catch (e) {
+        console.error("Auth: Profile fetch error", e);
+    } finally {
+        setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
-      else setLoading(false);
+      if (session?.user) {
+          setUser(session.user);
+          fetchProfile(session.user.id);
+      } else {
+          setLoading(false);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
-      else {
+      if (session?.user) {
+          setUser(session.user);
+          fetchProfile(session.user.id);
+      } else {
+          setUser(null);
           setProfile(null);
           setLoading(false);
       }
@@ -55,23 +67,25 @@ export function useAuth() {
         options: { data: { username } }
     });
     if (error) throw error;
+    // Force create profile row immediately
+    if (data.user) {
+        await supabase.from('profiles').upsert({ id: data.user.id, username, jackpot_score: 0 });
+    }
   };
 
   const addJS = useCallback(async (amount: number) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) return;
 
-    // Use RPC or Upsert to be thread-safe
-    const { data: profile } = await supabase.from('profiles').select('jackpot_score').eq('id', session.user.id).single();
-    const newTotal = (profile?.jackpot_score || 0) + amount;
+    // 1. Get freshest score
+    const { data: current } = await supabase.from('profiles').select('jackpot_score').eq('id', session.user.id).single();
+    const newTotal = (current?.jackpot_score || 0) + amount;
 
+    // 2. Update DB
     const { error } = await supabase
       .from('profiles')
-      .upsert({
-        id: session.user.id,
-        jackpot_score: newTotal,
-        username: session.user.user_metadata?.username || 'Gamer'
-      }, { onConflict: 'id' });
+      .update({ jackpot_score: newTotal })
+      .eq('id', session.user.id);
 
     if (!error) {
         setProfile((prev: any) => ({ ...prev, jackpot_score: newTotal }));
