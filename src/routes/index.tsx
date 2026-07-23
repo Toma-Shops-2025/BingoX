@@ -333,14 +333,15 @@ export default function BingoXGame() {
                             </div>
 
                             <div className="flex flex-col items-end gap-3">
-                                <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-2xl flex flex-col items-end backdrop-blur-xl">
-                                    <div className="text-[8px] uppercase font-black opacity-40 mb-1">Account Bank</div>
+                                <div className="bg-white/5 border border-white/10 px-5 py-3 rounded-[24px] flex flex-col items-end backdrop-blur-xl shadow-2xl relative overflow-hidden group">
+                                    <div className="absolute top-0 left-0 w-1 h-full bg-primary/40" />
+                                    <div className="text-[9px] uppercase font-black opacity-30 mb-1 tracking-widest">Account Bank</div>
                                     <div className="flex items-center gap-2">
-                                        <Zap className="h-4 w-4 text-yellow-400 fill-yellow-400" />
-                                        <span className="text-xl font-black italic">{(profile?.jackpot_score || 0).toLocaleString()} JS</span>
+                                        <Zap className="h-4 w-4 text-yellow-400 fill-yellow-400 drop-shadow-glow" />
+                                        <span className="text-2xl font-black italic tracking-tighter text-white">{(profile?.jackpot_score || 0).toLocaleString()}</span>
                                     </div>
                                 </div>
-                                <div className="bg-white/10 px-3 py-1 rounded-full text-[10px] font-black italic text-primary border border-primary/20">
+                                <div className="bg-primary/10 px-4 py-1.5 rounded-full text-[11px] font-black italic text-primary border border-primary/30 shadow-glow">
                                     ROUND: {sessionScore.toLocaleString()}
                                 </div>
                                 <div className={cn(
