@@ -236,7 +236,12 @@ export default function BingoXGame() {
     useEffect(() => {
         if (activeTab === 'payout' && supabase) {
             const fetchL = async () => {
-                const { data } = await supabase.from('profiles').select('username, jackpot_score').order('jackpot_score', { ascending: false }).limit(5);
+                const { data } = await supabase
+                    .from('profiles')
+                    .select('username, jackpot_score')
+                    .gt('jackpot_score', 0) // Only show people who actually earned points
+                    .order('jackpot_score', { ascending: false })
+                    .limit(5);
                 if (data) setLeaderboard(data);
             };
             fetchL();
@@ -315,7 +320,7 @@ export default function BingoXGame() {
         <div className="h-screen w-full bg-[#02020a] text-white font-sans flex flex-col items-center overflow-hidden relative">
 
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-                <span className="text-[90vh] font-black italic opacity-[0.06] shadow-x-glow animate-float-slow select-none">X</span>
+                <span className="text-[90vh] font-black italic opacity-[0.12] shadow-x-glow animate-float-slow select-none">X</span>
             </div>
 
             <div className="flex-1 w-full max-w-md flex flex-col items-center z-10 overflow-y-auto px-4 pt-10 pb-32 no-scrollbar">
@@ -338,7 +343,7 @@ export default function BingoXGame() {
                                     <div className="text-[9px] uppercase font-black opacity-30 mb-1 tracking-widest">Account Bank</div>
                                     <div className="flex items-center gap-2">
                                         <Zap className="h-4 w-4 text-yellow-400 fill-yellow-400 drop-shadow-glow" />
-                                        <span className="text-2xl font-black italic tracking-tighter text-white">{(profile?.jackpot_score || 0).toLocaleString()}</span>
+                                        <span className="text-2xl font-black italic tracking-tighter text-white">{(profile?.jackpot_score || 0).toLocaleString()} JS</span>
                                     </div>
                                 </div>
                                 <div className="bg-primary/10 px-4 py-1.5 rounded-full text-[11px] font-black italic text-primary border border-primary/30 shadow-glow">

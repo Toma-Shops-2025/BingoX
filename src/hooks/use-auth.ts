@@ -10,20 +10,28 @@ export function useAuth() {
   const fetchProfile = useCallback(async (userId: string) => {
     try {
         const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+
+        const { data: { session } } = await supabase.auth.getSession();
+        const metaName = session?.user?.user_metadata?.username || session?.user?.user_metadata?.display_name || 'Gamer';
+
         if (data) {
+            // If profile exists but username is missing, update it
+            if (!data.username) {
+                await supabase.from('profiles').update({ username: metaName }).eq('id', userId);
+                data.username = metaName;
+            }
             setProfile(data);
         } else {
-            const { data: { session } } = await supabase.auth.getSession();
-            const displayName = session?.user?.user_metadata?.username || session?.user?.user_metadata?.display_name || 'Gamer';
             const { data: newP } = await supabase.from('profiles').upsert({
                 id: userId,
-                username: displayName,
-                display_name: displayName,
+                username: metaName,
+                display_name: metaName,
                 jackpot_score: 0
             }).select().single();
             if (newP) setProfile(newP);
         }
     } catch (e) {
+        console.error("Auth: fetchProfile error", e);
     } finally {
         setLoading(false);
     }
@@ -74,12 +82,21 @@ export function useAuth() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) return;
 
-    const { data: current } = await supabase.from('profiles').select('jackpot_score').eq('id', session.user.id).single();
-    const newTotal = (current?.jackpot_score || 0) + amount;
+    // ATOMIC INCREMENT
+    const { error } = await supabase.rpc('increment_jackpot_score', {
+        user_id: session.user.id,
+        amount: amount
+    });
 
-    await supabase.from('profiles').update({ jackpot_score: newTotal }).eq('id', session.user.id);
-    setProfile((prev: any) => ({ ...prev, jackpot_score: newTotal }));
-  }, []);
+    if (error) {
+        const { data: current } = await supabase.from('profiles').select('jackpot_score').eq('id', session.user.id).single();
+        const newTotal = (current?.jackpot_score || 0) + amount;
+        await supabase.from('profiles').update({ jackpot_score: newTotal }).eq('id', session.user.id);
+        setProfile((prev: any) => ({ ...prev, jackpot_score: newTotal }));
+    } else {
+        fetchProfile(session.user.id);
+    }
+  }, [fetchProfile]);
 
   const signOut = async () => {
     await supabase.auth.signOut();

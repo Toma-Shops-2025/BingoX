@@ -16,6 +16,9 @@ export function useBilling(addJS: (n: number) => void) {
 
         const store = CdvPurchase.store;
 
+        // Detailed logging
+        store.verbosity = CdvPurchase.LogLevel.DEBUG;
+
         store.register({
             id: PRODUCT_DOUBLE_JS,
             type: CdvPurchase.ProductType.NON_CONSUMABLE,
@@ -23,41 +26,57 @@ export function useBilling(addJS: (n: number) => void) {
         });
 
         store.when().approved((tx: any) => {
+            console.log("Billing: Purchase approved!", tx.productId);
             if (tx.productId === PRODUCT_DOUBLE_JS) {
-                toast.success("DOUBLE JS ACTIVATED!");
-                // You could trigger a flag update in your DB here
+                toast.success("DOUBLE JS ACTIVATED FOREVER!");
+                // Here we could update a 'is_pro' flag in the database
             }
             tx.verify();
             tx.finish();
         });
 
+        store.when().verified((p: any) => p.finish());
+
+        store.when().unverified((p: any) => {
+            console.log("Billing: Product unverified", p.id);
+        });
+
         store.ready(() => {
+            console.log("Billing: Store is ready!");
             setIsReady(true);
         });
 
+        store.error((err: any) => {
+            console.error("Billing error:", err.code, err.message);
+        });
+
         try {
-            store.initialize([CdvPurchase.Platform.GOOGLE_PLAY]);
-            store.update();
+            await store.initialize([CdvPurchase.Platform.GOOGLE_PLAY]);
+            await store.update();
         } catch (e) {
-            console.error("Billing: Init error", e);
+            console.error("Billing: Initialization failed", e);
         }
     };
 
     initStore();
   }, []);
 
-  const purchase = (id: string) => {
+  const purchase = async (id: string) => {
     const CdvPurchase = (window as any).CdvPurchase;
     if (!CdvPurchase || !CdvPurchase.store) {
-        return toast.error("Billing service not connected. Are you on a real device?");
+        return toast.error("Billing service not connected. Please use a real Android device.");
     }
 
-    const p = CdvPurchase.store.get(id);
+    const store = CdvPurchase.store;
+    const p = store.get(id);
+
     if (p) {
-        CdvPurchase.store.order(p);
+        console.log("Billing: Ordering product", id);
+        store.order(p);
     } else {
-        CdvPurchase.store.update();
-        toast.info("Connecting to Play Store... please wait 3 seconds.");
+        console.log("Billing: Product not found, refreshing store...");
+        await store.update();
+        toast.info("Connecting to Google Play... please wait 3 seconds and try again.");
     }
   };
 
