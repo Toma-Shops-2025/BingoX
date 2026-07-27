@@ -235,7 +235,17 @@ export default function BingoXGame() {
 
     const nextRound = async () => {
         const nextRC = roundCounter + 1; setRoundCounter(nextRC);
-        if (nextRC % 2 === 0) { try { await AdMob.prepareInterstitialAd({ adId: CONFIG.ADMOB_INTERSTITIAL_ID, isTesting: CONFIG.IS_TESTING }); await AdMob.showInterstitialAd(); } catch (e) {} }
+
+        // SHOW INTERSTITIAL EVERY 2 ROUNDS
+        if (nextRC % 2 === 0 && Capacitor.isNativePlatform()) {
+            try {
+                await AdMob.prepareInterstitial({ adId: CONFIG.ADMOB_INTERSTITIAL_ID, isTesting: CONFIG.IS_TESTING });
+                await AdMob.showInterstitial();
+            } catch (e) {
+                console.error("Interstitial Error:", e);
+            }
+        }
+
         setBoard(BingoEngine.generateBoard()); setCalledNumbers([]); setCurrentCall(null);
         setGameOver(false); setWinType(null); setIsAutoPlaying(false);
         setTimeLeft(CONFIG.ROUND_TIME_LIMIT); setSessionScore(0); setCompletedPatterns([]);
