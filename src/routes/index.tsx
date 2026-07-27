@@ -157,20 +157,29 @@ export default function BingoXGame() {
         const rListener = AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
             setIsAdPlaying(false);
             if (bgmRef.current) bgmRef.current.play().catch(() => {});
-            const chosen = ['WILD', 'AUTO', 'TIME', 'DOUBLE'][Math.floor(Math.random() * 4)];
-            if (chosen === 'WILD') { setHasWildCard(true); toast.success("WILD CARD!", { icon: '✨' }); }
-            else if (chosen === 'AUTO') {
-                setBoard(prev => {
-                    const next = [...prev];
-                    const t:any[]=[]; next.forEach((row,r)=>row.forEach((cell,c)=>{if(!cell.marked)t.push({r,c})}));
-                    t.sort(()=>Math.random()-0.5).slice(0,2).forEach(i=>next[i.r][i.c].marked=true);
-                    processWins(BingoEngine.checkWins(next));
-                    return next;
-                });
-                toast.success("AUTO DAUB!", { icon: '🤖' });
-            }
-            else if (chosen === 'TIME') { setTimeLeft(p => p + 15); toast.success("+15 SECONDS!", { icon: '⏰' }); }
-            else { setIsDoubleScoring(true); setTimeout(()=>setIsDoubleScoring(false),15000); toast.success("2X POINTS!", { icon: '🔥' }); }
+
+            // LUCKY DAUB: Now only daubs 2 random numbers
+            setBoard(prev => {
+                const next = [...prev];
+                const availableCells: any[] = [];
+                next.forEach((row, r) => row.forEach((cell, c) => {
+                    if (!cell.marked && cell.number !== "FREE") {
+                        availableCells.push({ r, c });
+                    }
+                }));
+
+                // Shuffle and pick 2
+                availableCells.sort(() => Math.random() - 0.5)
+                    .slice(0, 2)
+                    .forEach(pos => {
+                        next[pos.r][pos.c] = { ...next[pos.r][pos.c], marked: true };
+                    });
+
+                processWins(BingoEngine.checkWins(next));
+                return next;
+            });
+
+            toast.success("LUCKY DAUB!", { description: "2 random numbers marked!", icon: '✨' });
             setIsAdLoading(false);
         });
         const dListener = AdMob.addListener(RewardAdPluginEvents.Dismissed, () => { setIsAdPlaying(false); setIsAdLoading(false); if (bgmRef.current) bgmRef.current.play().catch(() => {}); });
@@ -230,7 +239,7 @@ export default function BingoXGame() {
         setBoard(BingoEngine.generateBoard()); setCalledNumbers([]); setCurrentCall(null);
         setGameOver(false); setWinType(null); setIsAutoPlaying(false);
         setTimeLeft(CONFIG.ROUND_TIME_LIMIT); setSessionScore(0); setCompletedPatterns([]);
-        setHasAwardedX(false); setHasAwardedFullHouse(false); setIsDoubleScoring(false); setHasWildCard(false);
+        setHasAwardedX(false); setHasAwardedFullHouse(false);
     }
 
     useEffect(() => {
@@ -392,8 +401,7 @@ export default function BingoXGame() {
                             ))}
                         </div>
 
-                        <div className={cn("relative p-2 rounded-[45px] bg-black border-4 shadow-2xl mb-8 transition-colors duration-500", hasWildCard ? "border-purple-500/50 shadow-purple-500/20" : "border-white/5")}>
-                            {hasWildCard && <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-purple-500 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase italic animate-bounce shadow-glow">Wild Card Active!</div>}
+                        <div className={cn("relative p-2 rounded-[45px] bg-black border-4 shadow-2xl mb-8 transition-colors duration-500", "border-white/5")}>
                             <div className="grid grid-cols-5 gap-1.5">
                                 {['B','I','N','G','O'].map((l, i) => (
                                     <div key={l} className={cn("w-14 h-12 flex flex-col items-center justify-center font-black text-2xl italic rounded-t-3xl", (COLUMN_THEMES as any)[i].bg, (COLUMN_THEMES as any)[i].color)}>
