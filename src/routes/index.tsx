@@ -4,12 +4,11 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useBilling, PRODUCT_DOUBLE_JS } from '@/hooks/use-billing'
 import { CONFIG } from '@/config'
-import { AdMob, BannerAdPosition, BannerAdSize, RewardAdPluginEvents } from '@capacitor-community/admob'
 import {
     Trophy, Zap, Pause, Play, Flame, Target, Star,
     History, ShoppingBag, Award, Home, User as UserIcon,
     CreditCard, Gift, Mail, Lock, Eye, EyeOff, ArrowLeft, Info, LogOut, Clock,
-    DollarSign, CheckCircle2, Loader2, Volume2, VolumeX, Sparkles, Coins
+    CheckCircle2, Loader2, Volume2, VolumeX, Sparkles, Coins
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -38,7 +37,6 @@ export default function BingoXGame() {
 
     const [activeTab, setActiveTab] = useState<'play' | 'shop' | 'payout' | 'catalog' | 'how_to_play'>('play')
     const [isMuted, setIsMuted] = useState(false)
-    const [isAdPlaying, setIsAdPlaying] = useState(false)
     const [showBingoCelebration, setShowBingoCelebration] = useState(false)
 
     // Game State
@@ -51,41 +49,19 @@ export default function BingoXGame() {
     const [winType, setWinType] = useState<string | null>(null)
     const [progress, setProgress] = useState(0)
     const [timeLeft, setTimeLeft] = useState(CONFIG.ROUND_TIME_LIMIT)
-    const [isAdLoading, setIsAdLoading] = useState(false)
+    const [isProcessing, setIsProcessing] = useState(false)
     const [completedPatterns, setCompletedPatterns] = useState<string[]>([])
     const [hasAwardedX, setHasAwardedX] = useState(false)
     const [hasAwardedFullHouse, setHasAwardedFullHouse] = useState(false)
-    const [isDoubleScoring, setIsDoubleScoring] = useState(false)
-    const [hasWildCard, setHasWildCard] = useState(false)
     const [roundCounter, setRoundCounter] = useState(0)
     const [leaderboard, setLeaderboard] = useState<any[]>([])
 
     // Audio Refs
     const bgmRef = useRef<HTMLAudioElement | null>(null)
     const callerRef = useRef<HTMLAudioElement | null>(null)
-    const isAdPlayingRef = useRef(false)
     const isMutedRef = useRef(false)
 
-    useEffect(() => { isAdPlayingRef.current = isAdPlaying; }, [isAdPlaying]);
     useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
-
-    // PRE-LOAD ADMOB
-    useEffect(() => {
-        if (!user) return;
-        const prepare = async () => {
-            try {
-                await AdMob.initialize();
-                await AdMob.showBanner({
-                    adId: CONFIG.ADMOB_BANNER_ID,
-                    position: BannerAdPosition.TOP_CENTER,
-                    size: BannerAdSize.BANNER,
-                    isTesting: CONFIG.IS_TESTING,
-                    margin: 0
-                });
-            } catch (e) {}
-        };
-        prepare();
-    }, [user]);
 
     // BGM PERROUND
     useEffect(() => {
@@ -108,7 +84,7 @@ export default function BingoXGame() {
     }, [user, activeTab, isAutoPlaying, isMuted, roundCounter]);
 
     const playCall = useCallback((num: number) => {
-        if (isAdPlayingRef.current || isMutedRef.current) return;
+        if (isMutedRef.current) return;
         if (callerRef.current) { callerRef.current.pause(); callerRef.current.currentTime = 0; }
         let prefix = num <= 15 ? "B" : num <= 30 ? "I" : num <= 45 ? "N" : num <= 60 ? "G" : "O";
         const audio = new Audio(`/audio/calls/${prefix}-${num}.MP3`);
@@ -151,44 +127,9 @@ export default function BingoXGame() {
         }
     }, [completedPatterns, hasAwardedX, hasAwardedFullHouse]);
 
-    // ADMOB REWARD HANDLER
-    useEffect(() => {
-        if (!user) return;
-        const rListener = AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
-            setIsAdPlaying(false);
-            if (bgmRef.current) bgmRef.current.play().catch(() => {});
-
-            // LUCKY DAUB: Now only daubs 2 random numbers
-            setBoard(prev => {
-                const next = [...prev];
-                const availableCells: any[] = [];
-                next.forEach((row, r) => row.forEach((cell, c) => {
-                    if (!cell.marked && cell.number !== "FREE") {
-                        availableCells.push({ r, c });
-                    }
-                }));
-
-                // Shuffle and pick 2
-                availableCells.sort(() => Math.random() - 0.5)
-                    .slice(0, 2)
-                    .forEach(pos => {
-                        next[pos.r][pos.c] = { ...next[pos.r][pos.c], marked: true };
-                    });
-
-                processWins(BingoEngine.checkWins(next));
-                return next;
-            });
-
-            toast.success("LUCKY DAUB!", { description: "2 random numbers marked!", icon: '✨' });
-            setIsAdLoading(false);
-        });
-        const dListener = AdMob.addListener(RewardAdPluginEvents.Dismissed, () => { setIsAdPlaying(false); setIsAdLoading(false); if (bgmRef.current) bgmRef.current.play().catch(() => {}); });
-        return () => { rListener.remove(); dListener.remove(); };
-    }, [user, processWins]);
-
     // GAME LOOP LOGIC
     const pickNumber = useCallback(() => {
-        if (isAdPlayingRef.current || gameOver || !isAutoPlaying) return;
+        if (gameOver || !isAutoPlaying) return;
         setCalledNumbers(prev => {
             const rem = Array.from({length:75},(_,i)=>i+1).filter(n=>!prev.includes(n));
             if (rem.length === 0) { endGame("BOARD FULL"); return prev; }
@@ -222,30 +163,41 @@ export default function BingoXGame() {
         if (sessionScore > 0) await addJS(sessionScore);
     };
 
-    const handleRewardBoost = async () => {
-        if (gameOver || isAdLoading) return;
-        setIsAdLoading(true); setIsAdPlaying(true);
-        if (bgmRef.current) bgmRef.current.pause();
-        if (callerRef.current) callerRef.current.pause();
-        try {
-            await AdMob.prepareRewardVideoAd({ adId: CONFIG.ADMOB_REWARDED_ID, isTesting: CONFIG.IS_TESTING });
-            await AdMob.showRewardVideoAd();
-        } catch (e) { setIsAdLoading(false); setIsAdPlaying(false); if(bgmRef.current) bgmRef.current.play(); }
+    const handleLuckyDaub = async () => {
+        if (gameOver || isProcessing) return;
+        setIsProcessing(true);
+
+        // Temporarily simulate a delay as if an ad played
+        toast.info("Power-up activating...");
+
+        setTimeout(() => {
+            setBoard(prev => {
+                const next = [...prev];
+                const availableCells: any[] = [];
+                next.forEach((row, r) => row.forEach((cell, c) => {
+                    if (!cell.marked && cell.number !== "FREE") {
+                        availableCells.push({ r, c });
+                    }
+                }));
+
+                if (availableCells.length > 0) {
+                    availableCells.sort(() => Math.random() - 0.5)
+                        .slice(0, 2)
+                        .forEach(pos => {
+                            next[pos.r][pos.c] = { ...next[pos.r][pos.c], marked: true };
+                        });
+                    processWins(BingoEngine.checkWins(next));
+                }
+                return next;
+            });
+
+            toast.success("LUCKY DAUB!", { description: "2 random numbers marked!", icon: '✨' });
+            setIsProcessing(false);
+        }, 1000);
     }
 
     const nextRound = async () => {
         const nextRC = roundCounter + 1; setRoundCounter(nextRC);
-
-        // SHOW INTERSTITIAL EVERY 2 ROUNDS
-        if (nextRC % 2 === 0 && Capacitor.isNativePlatform()) {
-            try {
-                await AdMob.prepareInterstitial({ adId: CONFIG.ADMOB_INTERSTITIAL_ID, isTesting: CONFIG.IS_TESTING });
-                await AdMob.showInterstitial();
-            } catch (e) {
-                console.error("Interstitial Error:", e);
-            }
-        }
-
         setBoard(BingoEngine.generateBoard()); setCalledNumbers([]); setCurrentCall(null);
         setGameOver(false); setWinType(null); setIsAutoPlaying(false);
         setTimeLeft(CONFIG.ROUND_TIME_LIMIT); setSessionScore(0); setCompletedPatterns([]);
@@ -258,7 +210,7 @@ export default function BingoXGame() {
                 const { data } = await supabase
                     .from('profiles')
                     .select('username, jackpot_score')
-                    .gt('jackpot_score', 0) // Only show people who actually earned points
+                    .gt('jackpot_score', 0)
                     .order('jackpot_score', { ascending: false })
                     .limit(5);
                 if (data) setLeaderboard(data);
@@ -268,15 +220,13 @@ export default function BingoXGame() {
     }, [activeTab, supabase]);
 
     const markCell = (r: number, c: number) => {
-        if (gameOver || isAdPlaying) return;
+        if (gameOver) return;
         const cell = board[r][c];
-        if (cell.number === "FREE" || calledNumbers.includes(cell.number as number) || hasWildCard) {
+        if (cell.number === "FREE" || calledNumbers.includes(cell.number as number)) {
             if (cell.marked) return;
             const nb = [...board]; nb[r][c].marked = true; setBoard(nb);
             let earned = CONFIG.POINTS_PER_DAUB + Math.floor((100 - progress) * 5);
-            if (isDoubleScoring) earned *= 2;
             setSessionScore(prev => prev + earned);
-            if (hasWildCard && cell.number !== "FREE" && !calledNumbers.includes(cell.number as number)) setHasWildCard(false);
             processWins(BingoEngine.checkWins(nb));
         }
     }
@@ -314,7 +264,7 @@ export default function BingoXGame() {
                         </div>
                     )}
                     <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
-                        <Mail className="h-5 w-5 text-white/20 mr-3" />
+                        <Mail className="h-5 w-5 text-white/40 mr-3" />
                         <input type="email" placeholder="Email" className="bg-transparent outline-none w-full font-bold text-white" value={email} onChange={e => setEmail(e.target.value)} required />
                     </div>
                     <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
@@ -441,11 +391,11 @@ export default function BingoXGame() {
 
                         <div className="flex gap-4 w-full px-4 mb-4">
                             <button
-                                onClick={handleRewardBoost}
-                                disabled={isAdLoading}
+                                onClick={handleLuckyDaub}
+                                disabled={isProcessing}
                                 className="flex-1 py-4 bg-purple-600/20 border-2 border-purple-500/40 rounded-3xl flex items-center justify-center gap-2 font-black italic uppercase text-xs active:scale-95 transition-all disabled:opacity-50"
                             >
-                                {isAdLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-purple-400" />}
+                                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-purple-400" />}
                                 Lucky Daub
                             </button>
                             <button
