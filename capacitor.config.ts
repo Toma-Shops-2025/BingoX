@@ -8,6 +8,11 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
     cleartext: true // Helps with local testing
+  },
+  plugins: {
+    AdMob: {
+      appId: 'ca-app-pub-3940256099942544~3347511713', // Android Test ID
+    }
   }
 };
 
