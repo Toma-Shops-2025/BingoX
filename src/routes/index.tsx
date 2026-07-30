@@ -248,7 +248,35 @@ export default function BingoXGame() {
     const [showPass, setShowPass] = useState(false);
     const [agreed, setAgreed] = useState(false);
 
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
     if (loading) return <div className="h-screen w-full bg-[#050510] flex items-center justify-center text-white"><Loader2 className="animate-spin text-primary" /></div>;
+
+    const handleAuth = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (isSubmitting) return;
+
+        if (!isLogin && !agreed) {
+            toast.error("Please agree to the terms.");
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            if (isLogin) {
+                await signIn(email, password);
+                toast.success("Welcome back!");
+            } else {
+                await signUp(email, password, usernameInput);
+                toast.success("Account created!");
+            }
+        } catch (error: any) {
+            console.error("Auth error:", error);
+            toast.error(error.message || "Authentication failed");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     if (!user) {
         return (
@@ -256,7 +284,7 @@ export default function BingoXGame() {
                 <img src="logo.png" className="w-48 h-48 mb-6 drop-shadow-glow" alt="Logo" />
                 <h1 className="text-5xl font-black italic mb-2 text-primary tracking-tighter uppercase text-center leading-none">Bingo X</h1>
                 <p className="text-white/40 uppercase tracking-[0.4em] text-[9px] mb-12 font-bold text-center">Skill Edition</p>
-                <form onSubmit={(e) => { e.preventDefault(); if (!isLogin && !agreed) return toast.error("Agree to terms."); isLogin ? signIn(email, password) : signUp(email, password, usernameInput); }} className="w-full max-w-sm space-y-3">
+                <form onSubmit={handleAuth} className="w-full max-w-sm space-y-3">
                     {!isLogin && (
                         <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
                             <UserIcon className="h-5 w-5 text-white/20 mr-3" />
@@ -278,7 +306,14 @@ export default function BingoXGame() {
                             <span className="text-[10px] text-white/40 font-bold uppercase">18+ / Agree to Terms</span>
                         </div>
                     )}
-                    <button type="submit" className="w-full bg-primary py-5 rounded-3xl font-black uppercase tracking-widest shadow-glow mt-4 active:scale-95 transition-transform">{isLogin ? 'Login' : 'Create Account'}</button>
+                    <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="w-full bg-primary py-5 rounded-3xl font-black uppercase tracking-widest shadow-glow mt-4 active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                        {isSubmitting && <Loader2 className="h-5 w-5 animate-spin" />}
+                        {isLogin ? 'Login' : 'Create Account'}
+                    </button>
                     <button type="button" onClick={() => setIsLogin(!isLogin)} className="w-full text-center text-xs opacity-40 font-bold uppercase mt-4 underline">{isLogin ? "New? Sign up" : "Login"}</button>
                 </form>
             </div>
