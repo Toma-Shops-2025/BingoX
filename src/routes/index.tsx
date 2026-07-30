@@ -29,6 +29,12 @@ const REWARDS = [
     { id: 'v10', name: '$10 Visa Card', jp: 500000, type: 'Visa' },
     { id: 'a10', name: '$10 Amazon Gift', jp: 500000, type: 'Amazon' },
     { id: 'p10', name: '$10 PayPal Cash', jp: 500000, type: 'PayPal' },
+    { id: 'v25', name: '$25 Visa Card', jp: 1250000, type: 'Visa' },
+    { id: 'a25', name: '$25 Amazon Gift', jp: 1250000, type: 'Amazon' },
+    { id: 'p25', name: '$25 PayPal Cash', jp: 1250000, type: 'PayPal' },
+    { id: 'v50', name: '$50 Visa Card', jp: 2500000, type: 'Visa' },
+    { id: 'a50', name: '$50 Amazon Gift', jp: 2500000, type: 'Amazon' },
+    { id: 'p50', name: '$50 PayPal Cash', jp: 2500000, type: 'PayPal' },
 ];
 
 export default function BingoXGame() {
@@ -103,20 +109,24 @@ export default function BingoXGame() {
                 setCompletedPatterns(prev => [...prev, key]);
                 extra += CONFIG.BINGO_BONUS;
                 triggered = true;
-                toast.success("BINGO!", { icon: '🔥' });
+                toast.success(`BINGO! +${CONFIG.BINGO_BONUS.toLocaleString()} JS`, { icon: '🔥' });
             }
         });
 
         if (winResult.isXPattern && !hasAwardedX) {
             extra += CONFIG.X_PATTERN_BONUS;
             setHasAwardedX(true); triggered = true;
-            toast.success("X-PATTERN!", { icon: '💎' });
+            toast.success(`X-PATTERN! +${CONFIG.X_PATTERN_BONUS.toLocaleString()} JS`, { icon: '💎', duration: 4000 });
         }
 
         if (winResult.isFullHouse && !hasAwardedFullHouse) {
-            extra += 5000;
+            extra += 50000; // Large bonus for full house
             setHasAwardedFullHouse(true); triggered = true;
-            toast.success("FULL HOUSE!", { icon: '🏆' });
+            toast.success(`FULL HOUSE! +50,000 JS`, { icon: '🏆', duration: 5000 });
+            // Stop calling numbers immediately
+            setTimeout(() => {
+                endGame("FULL HOUSE");
+            }, 2000);
         }
 
         if (triggered) {
@@ -125,11 +135,11 @@ export default function BingoXGame() {
             setTimeout(() => setShowBingoCelebration(false), 3000);
             setSessionScore(prev => prev + extra);
         }
-    }, [completedPatterns, hasAwardedX, hasAwardedFullHouse]);
+    }, [completedPatterns, hasAwardedX, hasAwardedFullHouse, addJS]);
 
     // GAME LOOP LOGIC
     const pickNumber = useCallback(() => {
-        if (gameOver || !isAutoPlaying) return;
+        if (gameOver || !isAutoPlaying || hasAwardedFullHouse) return;
         setCalledNumbers(prev => {
             const rem = Array.from({length:75},(_,i)=>i+1).filter(n=>!prev.includes(n));
             if (rem.length === 0) { endGame("BOARD FULL"); return prev; }
@@ -137,7 +147,7 @@ export default function BingoXGame() {
             setCurrentCall(next); setProgress(0); playCall(next);
             return [next, ...prev];
         });
-    }, [gameOver, isAutoPlaying, playCall]);
+    }, [gameOver, isAutoPlaying, playCall, hasAwardedFullHouse]);
 
     useEffect(() => {
         let i: any; if (isAutoPlaying && !gameOver && activeTab === 'play') i = setInterval(pickNumber, 3500);
@@ -209,10 +219,10 @@ export default function BingoXGame() {
             const fetchL = async () => {
                 const { data } = await supabase
                     .from('profiles')
-                    .select('username, jackpot_score')
-                    .gt('jackpot_score', 0)
-                    .order('jackpot_score', { ascending: false })
-                    .limit(5);
+                    .select('username, jackpot_score, total_earned')
+                    .or('jackpot_score.gt.0,total_earned.gt.0')
+                    .order('total_earned', { ascending: false })
+                    .limit(10);
                 if (data) setLeaderboard(data);
             };
             fetchL();
@@ -235,9 +245,13 @@ export default function BingoXGame() {
         if ((profile?.jackpot_score || 0) < reward.jp) return;
         if (!confirm(`Redeem ${reward.jp.toLocaleString()} JS for a ${reward.name}?`)) return;
         try {
-            await supabase.from('payout_requests').insert({ user_id: user?.id, reward_name: reward.name, points_cost: reward.jp, status: 'pending' });
+            const { error } = await supabase.from('payout_requests').insert({ user_id: user?.id, reward_name: reward.name, points_cost: reward.jp, status: 'pending' });
+            if (error) throw error;
             await addJS(-reward.jp);
-            toast.success("Requested!");
+            toast.success("Redemption Submitted!", {
+                description: "Check your email for instructions. Payouts are processed within 24-48 hours.",
+                duration: 6000
+            });
         } catch (e: any) { alert(e.message); }
     }
 
@@ -517,7 +531,7 @@ export default function BingoXGame() {
                                     leaderboard.map((u, i) => (
                                         <div key={i} className="flex justify-between items-center text-[10px] font-black border-b border-white/5 pb-2">
                                             <span className="flex items-center gap-2"><span className="opacity-30">{i+1}.</span> {u.username}</span>
-                                            <span className="text-primary italic">{(u.jackpot_score || 0).toLocaleString()} JS</span>
+                                            <span className="text-primary italic">{(u.total_earned || u.jackpot_score || 0).toLocaleString()} JS</span>
                                         </div>
                                     ))
                                 ) : (

@@ -16,6 +16,7 @@
     "@supabase/supabase-js": "^2.45.4",
     "clsx": "^2.1.1",
     "cordova-plugin-applovin-max": "^2.1.0",
+    "cordova-plugin-purchase": "^13.18.0",
     "lucide-react": "^0.441.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

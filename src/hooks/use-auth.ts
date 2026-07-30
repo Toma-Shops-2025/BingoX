@@ -70,17 +70,32 @@ export function useAuth() {
     if (!user) return;
 
     try {
-        // ATOMIC INCREMENT
-        const { data: newScore, error } = await supabase.rpc('increment_jackpot_score', {
+        // 1. Update jackpot_score (current balance)
+        const { error: scoreErr } = await supabase.rpc('increment_jackpot_score', {
             user_id: user.id,
             amount: amount
         });
 
-        if (error) {
+        // 2. If it's a positive gain, also update total_earned (for leaderboard)
+        if (amount > 0) {
+            await supabase.rpc('increment_total_earned', {
+                user_id: user.id,
+                amount: amount
+            }).catch(() => {
+                console.warn("total_earned column might not exist yet");
+            });
+        }
+
+        if (scoreErr) {
             console.warn("RPC failed, attempting manual update...");
-            const { data: current } = await supabase.from('profiles').select('jackpot_score').eq('id', user.id).single();
+            const { data: current } = await supabase.from('profiles').select('jackpot_score, total_earned').eq('id', user.id).single();
             const newTotal = (current?.jackpot_score || 0) + amount;
-            await supabase.from('profiles').update({ jackpot_score: newTotal }).eq('id', user.id);
+            const newLifetime = (current?.total_earned || 0) + (amount > 0 ? amount : 0);
+
+            await supabase.from('profiles').update({
+                jackpot_score: newTotal,
+                total_earned: newLifetime
+            }).eq('id', user.id);
         }
 
         // FORCE SYNC
