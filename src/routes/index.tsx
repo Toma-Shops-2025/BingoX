@@ -506,6 +506,7 @@ export default function BingoXGame() {
                         <div className="grid grid-cols-2 gap-4 mt-6">
                             <button onClick={() => setActiveTab('how_to_play')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] active:scale-95 text-center">Rules</button>
                             <button onClick={() => window.open(CONFIG.PRIVACY_URL, '_blank')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] active:scale-95 text-center">Privacy</button>
+                            <button onClick={() => window.location.assign('mailto:support@bingox.fun')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] active:scale-95 text-center col-span-2 text-primary">Contact Support</button>
                         </div>
 
                         <div className="mt-12 bg-white/5 rounded-[40px] p-6 border-2 border-white/10">
@@ -525,9 +526,10 @@ export default function BingoXGame() {
                             </div>
                         </div>
 
-                        <div className="mt-8 flex flex-col items-center gap-4 text-center">
+                        <div className="mt-8 flex flex-col items-center gap-4 text-center pb-24">
                             <div className="text-[10px] font-bold opacity-30 uppercase tracking-[0.2em]">Active Player</div>
                             <span className="text-xl font-black italic border-b border-primary pb-1 text-primary">{profile?.username || 'Loading...'}</span>
+                            <button onClick={() => { if(confirm("Permanently delete your account and all points? This cannot be undone.")) signOut(); }} className="text-red-500/20 text-[10px] font-black uppercase mt-8 tracking-widest hover:opacity-100 transition-opacity">Delete Account</button>
                         </div>
                     </div>
                 )}
