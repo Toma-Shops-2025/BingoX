@@ -1,0 +1,70 @@
+// Bingo X - AppLovin MAX Integration
+import { Capacitor } from "@capacitor/core";
+
+const isNative = () => Capacitor.isNativePlatform();
+
+declare global {
+  interface Window {
+    applovin?: any;
+  }
+}
+
+const SDK_KEY = "YOUR_SDK_KEY_HERE";
+const REWARDED_AD_UNIT_ID = "YOUR_REWARDED_AD_UNIT_ID_HERE";
+
+export type RewardedResult = { success: boolean; fallback: boolean };
+
+/** Initialize AppLovin MAX SDK */
+export async function initAds(): Promise<void> {
+  if (!isNative()) return;
+
+  return new Promise((resolve) => {
+    const checkPlugin = () => {
+      if (window.applovin) {
+        window.applovin.initialize(SDK_KEY, (configuration: any) => {
+          console.log("AppLovin SDK Initialized", configuration);
+          window.applovin.loadRewardedAd(REWARDED_AD_UNIT_ID);
+          resolve();
+        });
+      } else {
+        document.addEventListener("deviceready", () => {
+          if (window.applovin) {
+            window.applovin.initialize(SDK_KEY, (configuration: any) => {
+              console.log("AppLovin SDK Initialized (deviceready)", configuration);
+              window.applovin.loadRewardedAd(REWARDED_AD_UNIT_ID);
+              resolve();
+            });
+          }
+        }, { once: true });
+      }
+    };
+    checkPlugin();
+  });
+}
+
+/** Show a rewarded ad */
+export async function showRewardedAd(): Promise<{ success: boolean }> {
+  if (!isNative()) {
+    console.log("Simulating ad on web...");
+    await new Promise((r) => setTimeout(r, 1500));
+    return { success: true };
+  }
+
+  return new Promise((resolve) => {
+    if (!window.applovin) {
+      resolve({ success: false });
+      return;
+    }
+
+    window.applovin.isRewardedAdReady(REWARDED_AD_UNIT_ID, (isReady: boolean) => {
+      if (isReady) {
+        window.applovin.showRewardedAd(REWARDED_AD_UNIT_ID);
+        // Fallback resolve in case of event missed
+        setTimeout(() => resolve({ success: true }), 31000);
+      } else {
+        window.applovin.loadRewardedAd(REWARDED_AD_UNIT_ID);
+        resolve({ success: false });
+      }
+    });
+  });
+}
