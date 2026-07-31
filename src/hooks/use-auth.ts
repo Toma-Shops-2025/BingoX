@@ -118,7 +118,13 @@ export function useAuth() {
     });
     if (error) throw error;
     if (data.user) {
-        await supabase.from('profiles').insert({ id: data.user.id, username, jackpot_score: 0 });
+        // Now saving email to profiles for easy admin access
+        await supabase.from('profiles').insert({
+            id: data.user.id,
+            username,
+            email,
+            jackpot_score: 0
+        });
     }
   };
 
