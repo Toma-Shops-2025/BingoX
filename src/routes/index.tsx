@@ -3,6 +3,7 @@ import { BingoEngine, BingoCell } from '@/logic/BingoEngine'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useBilling, PRODUCT_DOUBLE_JS } from '@/hooks/use-billing'
+import { initAds, showRewardedAd } from '@/lib/ads'
 import { CONFIG } from '@/config'
 import {
     Trophy, Zap, Pause, Play, Flame, Target, Star,
@@ -173,37 +174,43 @@ export default function BingoXGame() {
         if (sessionScore > 0) await addJS(sessionScore);
     };
 
+    useEffect(() => {
+        initAds();
+    }, []);
+
     const handleLuckyDaub = async () => {
         if (gameOver || isProcessing) return;
         setIsProcessing(true);
 
-        // Temporarily simulate a delay as if an ad played
-        toast.info("Power-up activating...");
-
-        setTimeout(() => {
-            setBoard(prev => {
-                const next = [...prev];
-                const availableCells: any[] = [];
-                next.forEach((row, r) => row.forEach((cell, c) => {
-                    if (!cell.marked && cell.number !== "FREE") {
-                        availableCells.push({ r, c });
-                    }
-                }));
-
-                if (availableCells.length > 0) {
-                    availableCells.sort(() => Math.random() - 0.5)
-                        .slice(0, 2)
-                        .forEach(pos => {
-                            next[pos.r][pos.c] = { ...next[pos.r][pos.c], marked: true };
-                        });
-                    processWins(BingoEngine.checkWins(next));
-                }
-                return next;
-            });
-
-            toast.success("LUCKY DAUB!", { description: "2 random numbers marked!", icon: '✨' });
+        const ad = await showRewardedAd();
+        if (!ad.success) {
+            toast.error("Ad not ready yet", { description: "Please try again in a moment." });
             setIsProcessing(false);
-        }, 1000);
+            return;
+        }
+
+        setBoard(prev => {
+            const next = [...prev];
+            const availableCells: any[] = [];
+            next.forEach((row, r) => row.forEach((cell, c) => {
+                if (!cell.marked && cell.number !== "FREE") {
+                    availableCells.push({ r, c });
+                }
+            }));
+
+            if (availableCells.length > 0) {
+                availableCells.sort(() => Math.random() - 0.5)
+                    .slice(0, 2)
+                    .forEach(pos => {
+                        next[pos.r][pos.c] = { ...next[pos.r][pos.c], marked: true };
+                    });
+                processWins(BingoEngine.checkWins(next));
+            }
+            return next;
+        });
+
+        toast.success("LUCKY DAUB!", { description: "2 random numbers marked!", icon: '✨' });
+        setIsProcessing(false);
     }
 
     const nextRound = async () => {
