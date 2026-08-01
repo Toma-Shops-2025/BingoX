@@ -3,7 +3,7 @@ import { BingoEngine, BingoCell } from '@/logic/BingoEngine'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useBilling, PRODUCT_DOUBLE_JS } from '@/hooks/use-billing'
-import { initAds, showRewardedAd } from '@/lib/ads'
+import { initAds, showRewardedAd, showInterstitial, setBannerVisible } from '@/lib/ads'
 import { CONFIG } from '@/config'
 import {
     Trophy, Zap, Pause, Play, Flame, Target, Star,
@@ -62,6 +62,7 @@ export default function BingoXGame() {
     const [hasAwardedFullHouse, setHasAwardedFullHouse] = useState(false)
     const [roundCounter, setRoundCounter] = useState(0)
     const [leaderboard, setLeaderboard] = useState<any[]>([])
+    const [gamesCompletedCount, setGamesCompletedCount] = useState(0)
 
     // Audio Refs
     const bgmRef = useRef<HTMLAudioElement | null>(null)
@@ -172,11 +173,27 @@ export default function BingoXGame() {
     const endGame = async (msg: string) => {
         setGameOver(true); setWinType(msg); setIsAutoPlaying(false);
         if (sessionScore > 0) await addJS(sessionScore);
+
+        setGamesCompletedCount(prev => {
+            const next = prev + 1;
+            if (next % 2 === 0) {
+                showInterstitial();
+            }
+            return next;
+        });
     };
 
     useEffect(() => {
         initAds();
     }, []);
+
+    useEffect(() => {
+        if (user) {
+            setBannerVisible(true);
+        } else {
+            setBannerVisible(false);
+        }
+    }, [user, activeTab]);
 
     const handleLuckyDaub = async () => {
         if (gameOver || isProcessing) return;

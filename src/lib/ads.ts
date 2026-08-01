@@ -11,6 +11,8 @@ declare global {
 
 const SDK_KEY = "YOUR_SDK_KEY_HERE";
 const REWARDED_AD_UNIT_ID = "YOUR_REWARDED_AD_UNIT_ID_HERE";
+const INTERSTITIAL_AD_UNIT_ID = "YOUR_INTERSTITIAL_AD_UNIT_ID_HERE";
+const BANNER_AD_UNIT_ID = "YOUR_BANNER_AD_UNIT_ID_HERE";
 
 export type RewardedResult = { success: boolean; fallback: boolean };
 
@@ -24,6 +26,7 @@ export async function initAds(): Promise<void> {
         window.applovin.initialize(SDK_KEY, (configuration: any) => {
           console.log("AppLovin SDK Initialized", configuration);
           window.applovin.loadRewardedAd(REWARDED_AD_UNIT_ID);
+          window.applovin.loadInterstitialAd(INTERSTITIAL_AD_UNIT_ID);
           resolve();
         });
       } else {
@@ -32,6 +35,7 @@ export async function initAds(): Promise<void> {
             window.applovin.initialize(SDK_KEY, (configuration: any) => {
               console.log("AppLovin SDK Initialized (deviceready)", configuration);
               window.applovin.loadRewardedAd(REWARDED_AD_UNIT_ID);
+              window.applovin.loadInterstitialAd(INTERSTITIAL_AD_UNIT_ID);
               resolve();
             });
           }
@@ -59,7 +63,6 @@ export async function showRewardedAd(): Promise<{ success: boolean }> {
     window.applovin.isRewardedAdReady(REWARDED_AD_UNIT_ID, (isReady: boolean) => {
       if (isReady) {
         window.applovin.showRewardedAd(REWARDED_AD_UNIT_ID);
-        // Fallback resolve in case of event missed
         setTimeout(() => resolve({ success: true }), 31000);
       } else {
         window.applovin.loadRewardedAd(REWARDED_AD_UNIT_ID);
@@ -67,4 +70,34 @@ export async function showRewardedAd(): Promise<{ success: boolean }> {
       }
     });
   });
+}
+
+/** Show an interstitial ad */
+export async function showInterstitial(): Promise<void> {
+    if (!isNative()) {
+        console.log("Simulating interstitial on web...");
+        return;
+    }
+
+    if (!window.applovin) return;
+
+    window.applovin.isInterstitialReady(INTERSTITIAL_AD_UNIT_ID, (isReady: boolean) => {
+        if (isReady) {
+            window.applovin.showInterstitial(INTERSTITIAL_AD_UNIT_ID);
+        } else {
+            window.applovin.loadInterstitialAd(INTERSTITIAL_AD_UNIT_ID);
+        }
+    });
+}
+
+/** Show/Hide Banner Ad */
+export function setBannerVisible(visible: boolean): void {
+    if (!isNative() || !window.applovin) return;
+
+    if (visible) {
+        window.applovin.createBanner(BANNER_AD_UNIT_ID, "bottom_center");
+        window.applovin.showBanner(BANNER_AD_UNIT_ID);
+    } else {
+        window.applovin.hideBanner(BANNER_AD_UNIT_ID);
+    }
 }
