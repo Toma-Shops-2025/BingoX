@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "npx vite build",
     "preview": "vite preview",
-    "assets:generate": "capacitor-assets generate --android"
+    "assets:generate": "npx @capacitor/assets generate --android"
   },
   "dependencies": {
     "@capacitor/android": "^8",
