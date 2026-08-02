@@ -63,7 +63,8 @@ export async function showRewardedAd(): Promise<{ success: boolean }> {
     window.applovin.isRewardedAdReady(REWARDED_AD_UNIT_ID, (isReady: boolean) => {
       if (isReady) {
         window.applovin.showRewardedAd(REWARDED_AD_UNIT_ID);
-        setTimeout(() => resolve({ success: true }), 31000);
+        // Resolve after a short delay so UI is responsive
+        setTimeout(() => resolve({ success: true }), 2000);
       } else {
         window.applovin.loadRewardedAd(REWARDED_AD_UNIT_ID);
         resolve({ success: false });
