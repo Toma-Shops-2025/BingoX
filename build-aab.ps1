@@ -4,14 +4,16 @@
 $ProjectPath  = "$env:USERPROFILE\Desktop\bingo-x"
 $KeystorePath = "C:\Keys\bingo-x.jks"
 $KeyAlias     = "alias"
-$BumpVersion  = $true
 $AabPath      = "$ProjectPath\android\app\build\outputs\bundle\release\app-release.aab"
+$Password     = "Custom.247"
 
-$ErrorActionPreference = "Stop"
+# Relax error handling for background cleanup tasks
+$ErrorActionPreference = "Continue"
 
 function Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 
 Step "Cleaning old build files..."
+if (Test-Path "dist") { Remove-Item "dist" -Recurse -Force }
 if (Test-Path $AabPath) { Remove-Item $AabPath -Force }
 
 Step "Switching to project: $ProjectPath"
@@ -22,78 +24,61 @@ npm install
 
 Step "Building web app"
 npm run build
-
-Step "Clearing old Android icon + splash outputs"
-$resPath = "$ProjectPath\android\app\src\main\res"
-if (Test-Path -LiteralPath $resPath -PathType Container) {
-    Get-ChildItem -LiteralPath $resPath -Directory -Filter "mipmap-*" | ForEach-Object {
-        Remove-Item -LiteralPath (Join-Path $_.FullName "ic_launcher*.png") -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath (Join-Path $_.FullName "ic_launcher*.xml") -Force -ErrorAction SilentlyContinue
-    }
-    Get-ChildItem -LiteralPath $resPath -Directory -Filter "drawable*" | ForEach-Object {
-        Remove-Item -LiteralPath (Join-Path $_.FullName "splash*.png") -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath (Join-Path $_.FullName "ic_launcher*.xml") -Force -ErrorAction SilentlyContinue
-    }
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Web build failed!" -ForegroundColor Red
+    exit 1
 }
 
-Step "Regenerating Android launcher icon + splash from assets/"
+Step "Regenerating Android launcher icon + splash from resources/"
 npm run assets:generate
 
-Step "Capacitor sync (Android)"
+Step "Capacitor sync (Forcing fresh public assets)"
+if (Test-Path "android/app/src/main/assets/public") {
+    Remove-Item "android/app/src/main/assets/public" -Recurse -Force
+}
 npx cap sync android
 
-if ($BumpVersion) {
-    Step "Bumping versionCode"
-    $gradle = "android/app/build.gradle"
-    $content = Get-Content $gradle -Raw
-    if ($content -match 'versionCode\s+(\d+)') {
-        $old = [int]$Matches[1]
-        $new = $old + 1
-        $content = $content -replace "versionCode\s+$old", "versionCode $new"
-        Set-Content $gradle $content -NoNewline
-        Write-Host "    versionCode: $old -> $new" -ForegroundColor Green
-    }
+Step "Bumping versionCode..."
+$gradle = "android/app/build.gradle"
+$content = Get-Content $gradle -Raw
+if ($content -match 'versionCode\s+(\d+)') {
+    $old = [int]$Matches[1]
+    $new = $old + 1
+    $content = $content -replace "versionCode\s+$old", "versionCode $new"
+    Set-Content $gradle $content -NoNewline
+    Write-Host "    versionCode: $old -> $new" -ForegroundColor Green
 }
-
-Step "Keystore credentials (typing is hidden)"
-$storePassSecure = Read-Host "Keystore password" -AsSecureString
-$keyPassSecure   = Read-Host "Key password (Enter to reuse keystore password)" -AsSecureString
-
-$storePass = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($storePassSecure))
-$keyPass   = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($keyPassSecure))
-if ([string]::IsNullOrEmpty($keyPass)) { $keyPass = $storePass }
 
 Step "Building signed release AAB"
 if (Test-Path -Path "$ProjectPath\android\gradlew.bat") {
     Set-Location "$ProjectPath\android"
-    # Run clean before bundle
-    & .\gradlew.bat clean
+
+    # Stop old daemons to prevent file locking, ignore the "failure" message it generates
+    & .\gradlew.bat --stop 2>$null
+    & .\gradlew.bat clean 2>$null
 
     $gradleArgs = @(
         "bundleRelease",
         "-Pandroid.injected.signing.store.file=$KeystorePath",
-        "-Pandroid.injected.signing.store.password=$storePass",
+        "-Pandroid.injected.signing.store.password=$Password",
         "-Pandroid.injected.signing.key.alias=$KeyAlias",
-        "-Pandroid.injected.signing.key.password=$keyPass"
+        "-Pandroid.injected.signing.key.password=$Password"
     )
     & .\gradlew.bat @gradleArgs
+    $gradleExit = $LASTEXITCODE
 } else {
     Write-Error "gradlew.bat not found."
+    exit 1
 }
-
-$storePass = $null
-$keyPass = $null
-[System.GC]::Collect()
 
 Set-Location $ProjectPath
 
-if (Test-Path $AabPath) {
-    $time = (Get-Item $AabPath).LastWriteTime
+if ($gradleExit -eq 0 -and (Test-Path $AabPath)) {
     Write-Host "`n  SUCCESS" -ForegroundColor Green
     Write-Host "  Signed AAB: $AabPath" -ForegroundColor Green
-    Write-Host "  Timestamp: $time" -ForegroundColor Yellow
-    Write-Host "  Upload to Play Console.`n"
+    Write-Host "  Upload to Play Console -> Production -> Create new release.`n"
     Start-Process explorer.exe "/select,`"$AabPath`""
 } else {
-    Write-Error "Build finished but AAB not found at $AabPath"
+    Write-Host "`n  Build FAILED. Please scroll up to check for RED errors in the Gradle log." -ForegroundColor Red
+    exit 1
 }

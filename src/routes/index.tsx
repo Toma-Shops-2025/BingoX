@@ -352,7 +352,7 @@ export default function BingoXGame() {
                         {isSubmitting && <Loader2 className="h-5 w-5 animate-spin" />}
                         {isLogin ? 'Login' : 'Create Account'}
                     </button>
-                    <button type="button" onClick={() => setIsLogin(!isLogin)} className="w-full text-center text-xs opacity-40 font-bold uppercase mt-4 underline">{isLogin ? "New? Sign up" : "Login"}</button>
+                    <p className="text-center text-[8px] text-white/10 mt-8 uppercase font-bold tracking-tighter">Build v2.1.8-master</p>
                 </form>
             </div>
         )
