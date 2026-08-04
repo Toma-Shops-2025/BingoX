@@ -1,42 +1,37 @@
-// Bingo X - AppLovin MAX Integration
+// Bingo X - Unity Ads Integration
 import { Capacitor } from "@capacitor/core";
+import { toast } from "sonner";
 
 const isNative = () => Capacitor.isNativePlatform();
 
 declare global {
   interface Window {
-    applovin?: any;
+    unityads?: any;
   }
 }
 
-const SDK_KEY = "YOUR_SDK_KEY_HERE";
-const REWARDED_AD_UNIT_ID = "YOUR_REWARDED_AD_UNIT_ID_HERE";
-const INTERSTITIAL_AD_UNIT_ID = "YOUR_INTERSTITIAL_AD_UNIT_ID_HERE";
-const BANNER_AD_UNIT_ID = "YOUR_BANNER_AD_UNIT_ID_HERE";
+// YOUR REAL UNITY GAME ID for Bingo X
+const UNITY_GAME_ID = "6168869";
 
-export type RewardedResult = { success: boolean; fallback: boolean };
-
-/** Initialize AppLovin MAX SDK */
+/** Initialize Unity Ads SDK */
 export async function initAds(): Promise<void> {
   if (!isNative()) return;
+  console.log("🎬 Ad System Initializing...");
 
   return new Promise((resolve) => {
     const checkPlugin = () => {
-      if (window.applovin) {
-        window.applovin.initialize(SDK_KEY, (configuration: any) => {
-          console.log("AppLovin SDK Initialized", configuration);
-          window.applovin.loadRewardedAd(REWARDED_AD_UNIT_ID);
-          window.applovin.loadInterstitialAd(INTERSTITIAL_AD_UNIT_ID);
+      if (window.unityads) {
+        // false = Test Mode OFF (Real Ads ON)
+        window.unityads.initialize(UNITY_GAME_ID, false, () => {
+          console.log("✅ Unity Ads Initialized - Bingo X");
           resolve();
         });
       } else {
         document.addEventListener("deviceready", () => {
-          if (window.applovin) {
-            window.applovin.initialize(SDK_KEY, (configuration: any) => {
-              console.log("AppLovin SDK Initialized (deviceready)", configuration);
-              window.applovin.loadRewardedAd(REWARDED_AD_UNIT_ID);
-              window.applovin.loadInterstitialAd(INTERSTITIAL_AD_UNIT_ID);
-              resolve();
+          if (window.unityads) {
+            window.unityads.initialize(UNITY_GAME_ID, false, () => {
+                console.log("✅ Unity Ads Initialized (deviceready) - Bingo X");
+                resolve();
             });
           }
         }, { once: true });
@@ -49,24 +44,24 @@ export async function initAds(): Promise<void> {
 /** Show a rewarded ad */
 export async function showRewardedAd(): Promise<{ success: boolean }> {
   if (!isNative()) {
-    console.log("Simulating ad on web...");
-    await new Promise((r) => setTimeout(r, 1500));
+    toast.info("Simulating Rewarded Video...");
+    await new Promise((r) => setTimeout(r, 2000));
     return { success: true };
   }
 
   return new Promise((resolve) => {
-    if (!window.applovin) {
+    if (!window.unityads) {
+      toast.error("Ad Engine not ready");
       resolve({ success: false });
       return;
     }
 
-    window.applovin.isRewardedAdReady(REWARDED_AD_UNIT_ID, (isReady: boolean) => {
-      if (isReady) {
-        window.applovin.showRewardedAd(REWARDED_AD_UNIT_ID);
-        // Resolve after a short delay so UI is responsive
-        setTimeout(() => resolve({ success: true }), 2000);
+    // "Rewarded_Android" is the default Ad Unit name in Unity
+    window.unityads.show("Rewarded_Android", (res: any) => {
+      if (res === "COMPLETED") {
+        resolve({ success: true });
       } else {
-        window.applovin.loadRewardedAd(REWARDED_AD_UNIT_ID);
+        toast.error("Ad not finished - no reward granted");
         resolve({ success: false });
       }
     });
@@ -75,30 +70,13 @@ export async function showRewardedAd(): Promise<{ success: boolean }> {
 
 /** Show an interstitial ad */
 export async function showInterstitial(): Promise<void> {
-    if (!isNative()) {
-        console.log("Simulating interstitial on web...");
-        return;
-    }
+    if (!isNative() || !window.unityads) return;
 
-    if (!window.applovin) return;
-
-    window.applovin.isInterstitialReady(INTERSTITIAL_AD_UNIT_ID, (isReady: boolean) => {
-        if (isReady) {
-            window.applovin.showInterstitial(INTERSTITIAL_AD_UNIT_ID);
-        } else {
-            window.applovin.loadInterstitialAd(INTERSTITIAL_AD_UNIT_ID);
-        }
-    });
+    // "Interstitial_Android" is the default Ad Unit name in Unity
+    window.unityads.show("Interstitial_Android");
 }
 
 /** Show/Hide Banner Ad */
 export function setBannerVisible(visible: boolean): void {
-    if (!isNative() || !window.applovin) return;
-
-    if (visible) {
-        window.applovin.createBanner(BANNER_AD_UNIT_ID, "bottom_center");
-        window.applovin.showBanner(BANNER_AD_UNIT_ID);
-    } else {
-        window.applovin.hideBanner(BANNER_AD_UNIT_ID);
-    }
+    console.log("Banner visibility set to:", visible);
 }
