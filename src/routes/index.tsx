@@ -12,6 +12,7 @@ import {
     CheckCircle2, Loader2, Volume2, VolumeX, Sparkles, Coins
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { Capacitor } from '@capacitor/core'
 
 const COLUMN_THEMES = {
     0: { label: 'B', color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/20', glow: 'shadow-cyan-500/50', active: 'bg-cyan-500' },
@@ -30,12 +31,6 @@ const REWARDS = [
     { id: 'v10', name: '$10 Visa Card', jp: 500000, type: 'Visa' },
     { id: 'a10', name: '$10 Amazon Gift', jp: 500000, type: 'Amazon' },
     { id: 'p10', name: '$10 PayPal Cash', jp: 500000, type: 'PayPal' },
-    { id: 'v25', name: '$25 Visa Card', jp: 1250000, type: 'Visa' },
-    { id: 'a25', name: '$25 Amazon Gift', jp: 1250000, type: 'Amazon' },
-    { id: 'p25', name: '$25 PayPal Cash', jp: 1250000, type: 'PayPal' },
-    { id: 'v50', name: '$50 Visa Card', jp: 2500000, type: 'Visa' },
-    { id: 'a50', name: '$50 Amazon Gift', jp: 2500000, type: 'Amazon' },
-    { id: 'p50', name: '$50 PayPal Cash', jp: 2500000, type: 'PayPal' },
 ];
 
 export default function BingoXGame() {
@@ -62,7 +57,6 @@ export default function BingoXGame() {
     const [hasAwardedFullHouse, setHasAwardedFullHouse] = useState(false)
     const [roundCounter, setRoundCounter] = useState(0)
     const [leaderboard, setLeaderboard] = useState<any[]>([])
-    const [gamesCompletedCount, setGamesCompletedCount] = useState(0)
 
     // Audio Refs
     const bgmRef = useRef<HTMLAudioElement | null>(null)
@@ -71,20 +65,16 @@ export default function BingoXGame() {
 
     useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
-    // BGM PERROUND
     useEffect(() => {
         if (!user) return;
         if (!bgmRef.current) bgmRef.current = new Audio();
-
         bgmRef.current.loop = true;
         bgmRef.current.muted = isMuted;
-
         let track = "/audio/bgm/login.mp3";
         if (activeTab === 'play' && isAutoPlaying) {
             const randomGame = GAME_TRACKS[Math.floor(Math.random() * GAME_TRACKS.length)];
             track = `/audio/bgm/${randomGame}`;
         }
-
         if (!bgmRef.current.src.endsWith(track)) {
             bgmRef.current.src = track;
             bgmRef.current.play().catch(() => {});
@@ -104,7 +94,6 @@ export default function BingoXGame() {
     const processWins = useCallback((winResult: any) => {
         let extra = 0;
         let triggered = false;
-
         winResult.patterns.forEach((p: any) => {
             const key = p.join(',');
             if (!completedPatterns.includes(key)) {
@@ -114,32 +103,25 @@ export default function BingoXGame() {
                 toast.success(`BINGO! +${CONFIG.BINGO_BONUS.toLocaleString()} JS`, { icon: '🔥' });
             }
         });
-
         if (winResult.isXPattern && !hasAwardedX) {
             extra += CONFIG.X_PATTERN_BONUS;
             setHasAwardedX(true); triggered = true;
             toast.success(`X-PATTERN! +${CONFIG.X_PATTERN_BONUS.toLocaleString()} JS`, { icon: '💎', duration: 4000 });
         }
-
         if (winResult.isFullHouse && !hasAwardedFullHouse) {
-            extra += 50000; // Large bonus for full house
+            extra += 50000;
             setHasAwardedFullHouse(true); triggered = true;
             toast.success(`FULL HOUSE! +50,000 JS`, { icon: '🏆', duration: 5000 });
-            // Stop calling numbers immediately
-            setTimeout(() => {
-                endGame("FULL HOUSE");
-            }, 2000);
+            setTimeout(() => { endGame("FULL HOUSE"); }, 2000);
         }
-
         if (triggered) {
             new Audio('/audio/sfx/bingo.mp3').play().catch(() => {});
             setShowBingoCelebration(true);
             setTimeout(() => setShowBingoCelebration(false), 3000);
             setSessionScore(prev => prev + extra);
         }
-    }, [completedPatterns, hasAwardedX, hasAwardedFullHouse, addJS]);
+    }, [completedPatterns, hasAwardedX, hasAwardedFullHouse]);
 
-    // GAME LOOP LOGIC
     const pickNumber = useCallback(() => {
         if (gameOver || !isAutoPlaying || hasAwardedFullHouse) return;
         setCalledNumbers(prev => {
@@ -173,39 +155,31 @@ export default function BingoXGame() {
     const endGame = async (msg: string) => {
         setGameOver(true); setWinType(msg); setIsAutoPlaying(false);
         if (sessionScore > 0) await addJS(sessionScore);
-
-        setGamesCompletedCount(prev => {
-            const next = prev + 1;
-            if (next % 2 === 0) {
-                showInterstitial();
-            }
-            return next;
-        });
+        // Show ad after EVERY game (if not full house/special case handled above)
+        showInterstitial();
     };
 
     useEffect(() => {
-        initAds();
+        if (Capacitor.isNativePlatform()) {
+            initAds();
+            setBannerVisible(true);
+        }
     }, []);
 
     useEffect(() => {
-        if (user) {
+        if (user && Capacitor.isNativePlatform()) {
             setBannerVisible(true);
-        } else {
-            setBannerVisible(false);
         }
     }, [user, activeTab]);
 
     const handleLuckyDaub = async () => {
         if (gameOver || isProcessing) return;
         setIsProcessing(true);
-
         const ad = await showRewardedAd();
         if (!ad.success) {
-            toast.error("Ad not ready yet", { description: "Please try again in a moment." });
             setIsProcessing(false);
             return;
         }
-
         setBoard(prev => {
             const next = [...prev];
             const availableCells: any[] = [];
@@ -214,7 +188,6 @@ export default function BingoXGame() {
                     availableCells.push({ r, c });
                 }
             }));
-
             if (availableCells.length > 0) {
                 availableCells.sort(() => Math.random() - 0.5)
                     .slice(0, 2)
@@ -225,31 +198,24 @@ export default function BingoXGame() {
             }
             return next;
         });
-
         toast.success("LUCKY DAUB!", { description: "2 random numbers marked!", icon: '✨' });
         setIsProcessing(false);
     }
 
     const nextRound = async () => {
-        const nextRC = roundCounter + 1; setRoundCounter(nextRC);
         setBoard(BingoEngine.generateBoard()); setCalledNumbers([]); setCurrentCall(null);
         setGameOver(false); setWinType(null); setIsAutoPlaying(false);
         setTimeLeft(CONFIG.ROUND_TIME_LIMIT); setSessionScore(0); setCompletedPatterns([]);
         setHasAwardedX(false); setHasAwardedFullHouse(false);
+        setRoundCounter(prev => prev + 1);
     }
 
     useEffect(() => {
         if (activeTab === 'payout' && supabase) {
-            const fetchL = async () => {
-                const { data } = await supabase
-                    .from('profiles')
-                    .select('username, jackpot_score, total_earned')
-                    .or('jackpot_score.gt.0,total_earned.gt.0')
-                    .order('total_earned', { ascending: false })
-                    .limit(10);
-                if (data) setLeaderboard(data);
-            };
-            fetchL();
+            supabase.from('profiles').select('username, jackpot_score, total_earned')
+                .or('jackpot_score.gt.0,total_earned.gt.0')
+                .order('total_earned', { ascending: false }).limit(10)
+                .then(({ data }) => { if (data) setLeaderboard(data); });
         }
     }, [activeTab, supabase]);
 
@@ -272,11 +238,8 @@ export default function BingoXGame() {
             const { error } = await supabase.from('payout_requests').insert({ user_id: user?.id, reward_name: reward.name, points_cost: reward.jp, status: 'pending' });
             if (error) throw error;
             await addJS(-reward.jp);
-            toast.success("Redemption Submitted!", {
-                description: "Check your email for instructions. Payouts are processed within 24-48 hours.",
-                duration: 6000
-            });
-        } catch (e: any) { alert(e.message); }
+            toast.success("Redemption Submitted!");
+        } catch (e: any) { console.error(e); }
     }
 
     const [email, setEmail] = useState('');
@@ -285,7 +248,6 @@ export default function BingoXGame() {
     const [isLogin, setIsLogin] = useState(true);
     const [showPass, setShowPass] = useState(false);
     const [agreed, setAgreed] = useState(false);
-
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     if (loading) return <div className="h-screen w-full bg-[#050510] flex items-center justify-center text-white"><Loader2 className="animate-spin text-primary" /></div>;
@@ -293,27 +255,14 @@ export default function BingoXGame() {
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
         if (isSubmitting) return;
-
-        if (!isLogin && !agreed) {
-            toast.error("Please agree to the terms.");
-            return;
-        }
-
+        if (!isLogin && !agreed) { toast.error("Please agree to the terms."); return; }
         setIsSubmitting(true);
         try {
-            if (isLogin) {
-                await signIn(email, password);
-                toast.success("Welcome back!");
-            } else {
-                await signUp(email, password, usernameInput);
-                toast.success("Account created!");
-            }
+            if (isLogin) await signIn(email, password);
+            else await signUp(email, password, usernameInput);
         } catch (error: any) {
-            console.error("Auth error:", error);
             toast.error(error.message || "Authentication failed");
-        } finally {
-            setIsSubmitting(false);
-        }
+        } finally { setIsSubmitting(false); }
     };
 
     if (!user) {
@@ -325,7 +274,7 @@ export default function BingoXGame() {
                 <form onSubmit={handleAuth} className="w-full max-w-sm space-y-3">
                     {!isLogin && (
                         <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
-                            <UserIcon className="h-5 w-5 text-white/20 mr-3" />
+                            <UserIcon className="h-5 w-5 text-white/40 mr-3" />
                             <input type="text" placeholder="Username" className="bg-transparent outline-none w-full font-bold text-white" value={usernameInput} onChange={e => setUsernameInput(e.target.value)} required />
                         </div>
                     )}
@@ -344,15 +293,10 @@ export default function BingoXGame() {
                             <span className="text-[10px] text-white/40 font-bold uppercase">18+ / Agree to Terms</span>
                         </div>
                     )}
-                    <button
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="w-full bg-primary py-5 rounded-3xl font-black uppercase tracking-widest shadow-glow mt-4 active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
+                    <button type="submit" disabled={isSubmitting} className="w-full bg-primary py-5 rounded-3xl font-black uppercase tracking-widest shadow-glow mt-4 active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-2">
                         {isSubmitting && <Loader2 className="h-5 w-5 animate-spin" />}
                         {isLogin ? 'Login' : 'Create Account'}
                     </button>
-                    <p className="text-center text-[8px] text-white/10 mt-8 uppercase font-bold tracking-tighter">Build v2.1.8-master</p>
                 </form>
             </div>
         )
@@ -360,13 +304,11 @@ export default function BingoXGame() {
 
     return (
         <div className="h-screen w-full bg-[#02020a] text-white font-sans flex flex-col items-center overflow-hidden relative">
-
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                 <span className="text-[90vh] font-black italic opacity-[0.12] shadow-x-glow animate-float-slow select-none">X</span>
             </div>
 
             <div className="flex-1 w-full max-w-md flex flex-col items-center z-10 overflow-y-auto px-4 pt-10 pb-32 no-scrollbar">
-
                 {activeTab === 'play' && (
                     <>
                         <div className="w-full flex justify-between items-start mb-6 px-2">
@@ -378,7 +320,6 @@ export default function BingoXGame() {
                                     <LogOut className="h-5 w-5" />
                                 </button>
                             </div>
-
                             <div className="flex flex-col items-end gap-3">
                                 <div className="bg-white/5 border border-white/10 px-5 py-3 rounded-[24px] flex flex-col items-end backdrop-blur-xl shadow-2xl relative overflow-hidden group">
                                     <div className="absolute top-0 left-0 w-1 h-full bg-primary/40" />
@@ -388,13 +329,8 @@ export default function BingoXGame() {
                                         <span className="text-2xl font-black italic tracking-tighter text-white">{(profile?.jackpot_score || 0).toLocaleString()} JS</span>
                                     </div>
                                 </div>
-                                <div className="bg-primary/10 px-4 py-1.5 rounded-full text-[11px] font-black italic text-primary border border-primary/30 shadow-glow">
-                                    ROUND: {sessionScore.toLocaleString()}
-                                </div>
-                                <div className={cn(
-                                    "flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black italic border",
-                                    timeLeft < 20 ? "text-red-500 border-red-500 animate-pulse bg-red-500/10" : "text-white/60 border-white/10 bg-white/5"
-                                )}>
+                                <div className="bg-primary/10 px-4 py-1.5 rounded-full text-[11px] font-black italic text-primary border border-primary/30 shadow-glow">ROUND: {sessionScore.toLocaleString()}</div>
+                                <div className={cn("flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black italic border", timeLeft < 20 ? "text-red-500 border-red-500 animate-pulse bg-red-500/10" : "text-white/60 border-white/10 bg-white/5")}>
                                     <Clock className="h-3 w-3" />
                                     {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
                                 </div>
@@ -404,9 +340,7 @@ export default function BingoXGame() {
                         <div className="w-full mb-4">
                             <div className="bg-gradient-to-b from-white/10 to-transparent border border-white/10 rounded-[35px] p-6 flex items-center justify-between shadow-2xl backdrop-blur-md relative">
                                 <div className="flex flex-col">
-                                    <span className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em] mb-1 flex items-center gap-2">
-                                        <Target className="h-3 w-3" /> Next Ball
-                                    </span>
+                                    <span className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em] mb-1 flex items-center gap-2"><Target className="h-3 w-3" /> Next Ball</span>
                                     <div className="flex items-baseline gap-2">
                                         <span className={cn("text-6xl font-black italic leading-none", currentCall ? COLUMN_THEMES[Math.floor((currentCall-1)/15) as 0].color : "text-white/20")}>
                                             {currentCall ? (currentCall <= 15 ? 'B' : currentCall <= 30 ? 'I' : currentCall <= 45 ? 'N' : currentCall <= 60 ? 'G' : 'O') : '-'}
@@ -414,15 +348,12 @@ export default function BingoXGame() {
                                         <span className="text-6xl font-black italic leading-none">{currentCall || "00"}</span>
                                     </div>
                                 </div>
-
                                 <div className="relative w-20 h-20">
                                     <svg className="w-full h-full -rotate-90">
                                         <circle cx="40" cy="40" r="35" fill="transparent" stroke="currentColor" strokeWidth="4" className="text-white/5" />
                                         <circle cx="40" cy="40" r="35" fill="transparent" stroke="currentColor" strokeWidth="4" strokeDasharray="220" strokeDashoffset={220 - (220 * progress) / 100} className="text-primary transition-all duration-100 ease-linear shadow-glow" />
                                     </svg>
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                        {isAutoPlaying ? <Flame className="h-6 w-6 text-primary animate-pulse" /> : <Play className="h-6 w-6 text-white/20" />}
-                                    </div>
+                                    <div className="absolute inset-0 flex items-center justify-center">{isAutoPlaying ? <Flame className="h-6 w-6 text-primary animate-pulse" /> : <Play className="h-6 w-6 text-white/20" />}</div>
                                 </div>
                             </div>
                         </div>
@@ -500,35 +431,10 @@ export default function BingoXGame() {
                     </div>
                 )}
 
-                {activeTab === 'catalog' && (
-                    <div className="w-full py-8 animate-in slide-in-from-right duration-300 px-2">
-                        <button onClick={() => setActiveTab('payout')} className="flex items-center gap-2 text-white/30 uppercase font-black text-[10px] mb-8 active:scale-90"><ArrowLeft className="h-4 w-4" /> Back</button>
-                        <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-emerald-400 text-center">Prizes</h2>
-                        <div className="grid grid-cols-1 gap-3">
-                            {REWARDS.map(r => (
-                                <div
-                                    key={r.id}
-                                    onClick={() => handlePayoutRequest(r)}
-                                    className={cn(
-                                        "bg-white/5 border p-6 rounded-[35px] flex justify-between items-center transition-all active:scale-95 cursor-pointer",
-                                        (profile?.jackpot_score || 0) >= r.jp ? "border-emerald-500/50" : "border-white/10 opacity-40"
-                                    )}
-                                >
-                                     <div className="flex flex-col text-left">
-                                        <span className="font-black italic uppercase text-lg leading-none">{r.name}</span>
-                                        <span className="text-[10px] opacity-40 font-bold mt-1 uppercase tracking-widest">{r.jp.toLocaleString()} JS Required</span>
-                                     </div>
-                                     { (profile?.jackpot_score || 0) >= r.jp ? <CheckCircle2 className="h-6 w-6 text-emerald-400" /> : <CreditCard className="h-8 w-8 text-white/10" /> }
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
                 {activeTab === 'payout' && (
                     <div className="w-full py-8 animate-in slide-in-from-right duration-300 px-2">
                         <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-emerald-400 text-center">Wins</h2>
-                        <div className="bg-gradient-to-br from-emerald-900 to-green-950 p-8 rounded-[50px] border-2 border-emerald-500/20 shadow-2xl relative overflow-hidden group mb-6">
+                        <div className="bg-gradient-to-br from-emerald-900 to-green-950 p-8 rounded-[50px] border-2 border-emerald-500/20 shadow-2xl relative overflow-hidden group mb-6 text-left">
                              <div className="flex justify-between items-start">
                                 <Gift className="h-12 w-12 text-emerald-400 mb-4" />
                                 <div className="bg-black/40 px-4 py-2 rounded-2xl border border-white/10 text-right backdrop-blur-md">
@@ -536,56 +442,19 @@ export default function BingoXGame() {
                                     <div className="text-xl font-black italic text-white">{(profile?.jackpot_score || 0).toLocaleString()} JS</div>
                                 </div>
                              </div>
-                             <h3 className="text-2xl font-black uppercase italic leading-none mb-2 text-left">Jackpot Rewards</h3>
-                             <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mb-6 text-left">Redeem points for real world money</p>
-                             <button onClick={() => setActiveTab('catalog')} className="w-full bg-white text-emerald-900 font-black py-4 rounded-3xl uppercase tracking-widest text-xs active:scale-95 transition-transform relative z-[100]">Browse Catalog</button>
+                             <h3 className="text-2xl font-black uppercase italic leading-none mb-2">Jackpot Rewards</h3>
+                             <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mb-6">Redeem points for real world money</p>
+                             <div className="grid grid-cols-1 gap-2">
+                                {REWARDS.slice(0, 4).map(r => (
+                                    <div key={r.id} onClick={() => handlePayoutRequest(r)} className={cn("bg-black/40 border p-4 rounded-2xl flex justify-between items-center", (profile?.jackpot_score || 0) >= r.jp ? "border-emerald-500/50" : "border-white/5 opacity-40")}>
+                                        <span className="font-black italic uppercase text-xs">{r.name}</span>
+                                        <span className="text-[9px] font-bold">{r.jp.toLocaleString()} JS</span>
+                                    </div>
+                                ))}
+                             </div>
                         </div>
-
-                        <div className="grid grid-cols-2 gap-4 mt-6">
-                            <button onClick={() => setActiveTab('how_to_play')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] active:scale-95 text-center">Rules</button>
-                            <button onClick={() => window.open(CONFIG.PRIVACY_URL, '_blank')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] active:scale-95 text-center">Privacy</button>
-                            <button onClick={() => window.location.assign('mailto:support@bingox.fun')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] active:scale-95 text-center col-span-2 text-primary">Contact Support</button>
-                        </div>
-
-                        <div className="mt-12 bg-white/5 rounded-[40px] p-6 border-2 border-white/10">
-                            <Trophy className="h-8 w-8 text-yellow-400 mx-auto mb-4" />
-                            <h3 className="font-black uppercase italic mb-4 text-xs opacity-50 text-center text-primary tracking-widest">Global Leaderboard</h3>
-                            <div className="space-y-3">
-                                {leaderboard.length > 0 ? (
-                                    leaderboard.map((u, i) => (
-                                        <div key={i} className="flex justify-between items-center text-[10px] font-black border-b border-white/5 pb-2">
-                                            <span className="flex items-center gap-2"><span className="opacity-30">{i+1}.</span> {u.username}</span>
-                                            <span className="text-primary italic">{(u.total_earned || u.jackpot_score || 0).toLocaleString()} JS</span>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="text-center py-4 opacity-30 text-[10px] font-black uppercase italic tracking-widest">No scores yet today</div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="mt-8 flex flex-col items-center gap-4 text-center pb-24">
-                            <div className="text-[10px] font-bold opacity-30 uppercase tracking-[0.2em]">Active Player</div>
-                            <span className="text-xl font-black italic border-b border-primary pb-1 text-primary">{profile?.username || 'Loading...'}</span>
-                            <button onClick={() => { if(confirm("Permanently delete your account and all points? This cannot be undone.")) signOut(); }} className="text-red-500/20 text-[10px] font-black uppercase mt-8 tracking-widest hover:opacity-100 transition-opacity">Delete Account</button>
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'how_to_play' && (
-                    <div className="w-full py-8 animate-in slide-in-from-right duration-300 text-left">
-                        <button onClick={() => setActiveTab('payout')} className="flex items-center gap-2 text-white/30 uppercase font-black text-[10px] mb-8 active:scale-90"><ArrowLeft className="h-4 w-4" /> Back</button>
-                        <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-emerald-400 text-center">Rules</h2>
-                        <div className="bg-white/5 border border-white/10 p-8 rounded-[40px] space-y-6">
-                            <section>
-                                <h3 className="text-primary font-black uppercase text-xs mb-2 italic tracking-widest">Winning Patterns</h3>
-                                <ul className="text-sm text-white/60 space-y-2 font-bold uppercase">
-                                    <li>• 5 in a row (+5,000 JS)</li>
-                                    <li>• 4 Corners (+5,000 JS)</li>
-                                    <li>• X-Pattern (+15,000 JS Bonus!)</li>
-                                    <li>• Full House (+5,000 JS Bonus!)</li>
-                                </ul>
-                            </section>
+                        <div className="grid grid-cols-2 gap-4 mt-12">
+                            <button onClick={() => window.location.assign('mailto:support@bingox.fun')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] text-primary col-span-2">Contact Support</button>
                         </div>
                     </div>
                 )}
@@ -597,25 +466,11 @@ export default function BingoXGame() {
                 <NavButton icon={Award} label="Wins" active={activeTab === 'payout'} onClick={() => setActiveTab('payout')} />
             </nav>
 
-            {showBingoCelebration && (
-                <div className="fixed inset-0 z-[3000] pointer-events-none flex items-center justify-center overflow-hidden">
-                    <div className="animate-bounce text-6xl font-black italic text-primary drop-shadow-[0_0_30px_rgba(34,211,238,0.8)] uppercase tracking-tighter">BINGO!</div>
-                    {[...Array(20)].map((_, i) => (
-                        <div key={i} className="absolute animate-fall" style={{
-                            left: `${Math.random() * 100}%`, top: `-10%`,
-                            animationDelay: `${Math.random() * 2}s`,
-                            backgroundColor: i % 2 === 0 ? '#22d3ee' : '#ec4899',
-                            width: '8px', height: '8px', borderRadius: '50%'
-                        }} />
-                    ))}
-                </div>
-            )}
-
             {gameOver && (
                 <div className="fixed inset-0 z-[2000] bg-black/95 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-700 backdrop-blur-md">
                     <Trophy className={cn("h-32 w-32 mb-8 drop-shadow-glow scale-125", sessionScore === 0 ? "text-red-500" : "text-yellow-400")} />
                     <h2 className={cn("text-7xl font-black italic mb-2 uppercase tracking-tighter leading-none", sessionScore === 0 ? "text-red-500" : "text-white")}>{winType}</h2>
-                    <div className="bg-white/5 border-2 border-white/10 p-10 rounded-[50px] mb-12 relative overflow-hidden">
+                    <div className="bg-white/5 border-2 border-white/10 p-10 rounded-[50px] mb-12 relative overflow-hidden text-center">
                         <div className={cn("absolute top-0 left-0 w-full h-1 shadow-glow", sessionScore === 0 ? "bg-red-500" : "bg-primary")} />
                         <span className="block text-[10px] opacity-40 font-black mb-2 tracking-widest uppercase">Session Points</span>
                         <span className="text-6xl font-black italic text-white drop-shadow-glow">{sessionScore.toLocaleString()}</span>
@@ -629,7 +484,7 @@ export default function BingoXGame() {
 
 function NavButton({ icon: Icon, label, active, onClick }: { icon: any, label: string, active: boolean, onClick: () => void }) {
     return (
-      <button onClick={onClick} className={cn("flex flex-col items-center justify-center gap-1 w-20 py-2 transition-all active:scale-90", active ? "text-primary scale-110" : "text-white/30")}>
+      <button onClick={onClick} className={cn("flex flex-col items-center justify-center gap-1.5 w-20 py-2 transition-all active:scale-90", active ? "text-primary scale-110" : "text-white/30")}>
         <Icon className={cn("h-6 w-6", active && "fill-current")} />
         <span className={cn("text-[8px] font-black uppercase tracking-widest", active ? "opacity-100" : "opacity-40")}>{label}</span>
       </button>
