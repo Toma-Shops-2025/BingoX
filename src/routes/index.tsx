@@ -153,9 +153,13 @@ export default function BingoXGame() {
     }, [isAutoPlaying, activeTab]);
 
     const endGame = async (msg: string) => {
-        setGameOver(true); setWinType(msg); setIsAutoPlaying(false);
+        setGameOver(true);
+        setWinType(msg);
+        setIsAutoPlaying(false);
+
         if (sessionScore > 0) await addJS(sessionScore);
-        // Show ad after EVERY game (if not full house/special case handled above)
+
+        // SHOW AD AFTER EVERY GAME
         showInterstitial();
     };
 
