@@ -155,10 +155,7 @@ export default function BingoXGame() {
     }, [isAutoPlaying, activeTab]);
 
     const endGame = async (msg: string) => {
-        setGameOver(true);
-        setWinType(msg);
-        setIsAutoPlaying(false);
-
+        setGameOver(true); setWinType(msg); setIsAutoPlaying(false);
         if (sessionScore > 0) {
             toast.promise(addJS(sessionScore), {
                 loading: 'Syncing score...',
@@ -166,10 +163,7 @@ export default function BingoXGame() {
                 error: 'Sync failed'
             });
         }
-
-        setTimeout(() => {
-            showInterstitial();
-        }, 1200);
+        showInterstitial();
     };
 
     useEffect(() => {
@@ -281,10 +275,10 @@ export default function BingoXGame() {
 
     if (!user) {
         return (
-            <div className="h-screen w-full bg-[#050510] flex flex-col items-center justify-center p-8 text-white relative">
+            <div className="h-screen w-full bg-[#050510] flex flex-col items-center justify-center p-8 text-white relative text-left">
                 <img src="logo.png" className="w-48 h-48 mb-6 drop-shadow-glow" alt="Logo" />
-                <h1 className="text-5xl font-black italic mb-2 text-primary tracking-tighter uppercase text-center leading-none">Bingo X</h1>
-                <p className="text-white/40 uppercase tracking-[0.4em] text-[9px] mb-12 font-bold text-center">Skill Edition</p>
+                <h1 className="text-5xl font-black italic mb-2 text-primary tracking-tighter uppercase text-center leading-none w-full">Bingo X</h1>
+                <p className="text-white/40 uppercase tracking-[0.4em] text-[9px] mb-12 font-bold text-center w-full">Skill Edition</p>
                 <form onSubmit={handleAuth} className="w-full max-w-sm space-y-3">
                     {!isLogin && (
                         <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
@@ -297,7 +291,7 @@ export default function BingoXGame() {
                         <input type="email" placeholder="Email" className="bg-transparent outline-none w-full font-bold text-white" value={email} onChange={e => setEmail(e.target.value)} required />
                     </div>
                     <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
-                        <Lock className="h-5 w-5 text-white/20 mr-3" />
+                        <Lock className="h-5 w-5 text-white/40 mr-3" />
                         <input type={showPass ? "text" : "password"} placeholder="Password" name="password" className="bg-transparent outline-none w-full font-bold text-white" value={password} onChange={e => setPassword(e.target.value)} required />
                         <button type="button" onClick={() => setShowPass(!showPass)}>{showPass ? <EyeOff className="h-4 w-4 opacity-30" /> : <Eye className="h-4 w-4 opacity-30" />}</button>
                     </div>
@@ -326,7 +320,7 @@ export default function BingoXGame() {
             <div className="flex-1 w-full max-w-md flex flex-col items-center z-10 overflow-y-auto px-4 pt-10 pb-32 no-scrollbar">
                 {activeTab === 'play' && (
                     <>
-                        <div className="w-full flex justify-between items-start mb-6 px-2">
+                        <div className="w-full flex justify-between items-start mb-6 px-2 text-left">
                             <div className="flex flex-col gap-2">
                                 <button onClick={() => setIsMuted(!isMuted)} className="p-3 bg-white/5 rounded-xl border border-white/10 active:scale-90">
                                     {isMuted ? <VolumeX className="h-5 w-5 text-white/40" /> : <Volume2 className="h-5 w-5 text-primary" />}
@@ -335,7 +329,7 @@ export default function BingoXGame() {
                                     <LogOut className="h-5 w-5" />
                                 </button>
                             </div>
-                            <div className="flex flex-col items-end gap-3">
+                            <div className="flex flex-col items-end gap-3 text-right">
                                 <div className="bg-white/5 border border-white/10 px-5 py-3 rounded-[24px] flex flex-col items-end backdrop-blur-xl shadow-2xl relative overflow-hidden group">
                                     <div className="absolute top-0 left-0 w-1 h-full bg-primary/40" />
                                     <div className="text-[9px] uppercase font-black opacity-30 mb-1 tracking-widest">Account Bank</div>
@@ -352,7 +346,7 @@ export default function BingoXGame() {
                             </div>
                         </div>
 
-                        <div className="w-full mb-4">
+                        <div className="w-full mb-4 text-left">
                             <div className="bg-gradient-to-b from-white/10 to-transparent border border-white/10 rounded-[35px] p-6 flex items-center justify-between shadow-2xl backdrop-blur-md relative">
                                 <div className="flex flex-col">
                                     <span className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em] mb-1 flex items-center gap-2"><Target className="h-3 w-3" /> Next Ball</span>
@@ -373,7 +367,7 @@ export default function BingoXGame() {
                             </div>
                         </div>
 
-                        <div className="flex gap-2 mb-6 opacity-60">
+                        <div className="flex gap-2 mb-6 opacity-60 text-left w-full px-2">
                             <History className="h-4 w-4 mr-2" />
                             {calledNumbers.slice(1, 6).map((n, i) => (
                                 <div key={i} className="text-[10px] font-black border border-white/10 px-2 py-1 rounded-md bg-white/5">{n}</div>
@@ -435,8 +429,8 @@ export default function BingoXGame() {
                     <div className="w-full py-8 animate-in slide-in-from-right duration-300">
                         <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-cyan-400 text-center">Store</h2>
                         <div className="space-y-4 px-2">
-                            <div className="bg-white/5 border border-white/10 p-6 rounded-[40px] flex justify-between items-center shadow-xl">
-                                <div className="flex flex-col text-left">
+                            <div className="bg-white/5 border border-white/10 p-6 rounded-[40px] flex justify-between items-center shadow-xl text-left">
+                                <div className="flex flex-col">
                                     <span className="font-black text-xl italic uppercase leading-none mb-1">Double JS</span>
                                     <span className="text-[10px] opacity-40 font-bold uppercase tracking-widest">Permanent 2x Points</span>
                                 </div>
@@ -447,9 +441,9 @@ export default function BingoXGame() {
                 )}
 
                 {activeTab === 'payout' && (
-                    <div className="w-full py-8 animate-in slide-in-from-right duration-300 px-2">
+                    <div className="w-full py-8 animate-in slide-in-from-right duration-300 px-2 text-left">
                         <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-emerald-400 text-center">Wins</h2>
-                        <div className="bg-gradient-to-br from-emerald-900 to-green-950 p-8 rounded-[50px] border-2 border-emerald-500/20 shadow-2xl relative overflow-hidden group mb-6 text-left">
+                        <div className="bg-gradient-to-br from-emerald-900 to-green-950 p-8 rounded-[50px] border-2 border-emerald-500/20 shadow-2xl relative overflow-hidden group mb-6">
                              <div className="flex justify-between items-start">
                                 <Gift className="h-12 w-12 text-emerald-400 mb-4" />
                                 <div className="bg-black/40 px-4 py-2 rounded-2xl border border-white/10 text-right backdrop-blur-md">
@@ -468,14 +462,14 @@ export default function BingoXGame() {
                                 ))}
                              </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-4 mt-12">
+                        <div className="grid grid-cols-2 gap-4 mt-12 text-center">
                             <button onClick={() => window.location.assign('mailto:support@bingox.fun')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] text-primary col-span-2">Contact Support</button>
                         </div>
                     </div>
                 )}
             </div>
 
-            <nav className="fixed bottom-0 left-0 right-0 h-24 bg-[#050510]/95 backdrop-blur-3xl border-t border-white/10 flex justify-around items-center px-4 pb-4 z-[5000]">
+            <nav className="fixed bottom-0 left-0 right-0 h-24 bg-[#050510]/95 backdrop-blur-3xl border-t border-white/10 flex justify-around items-center px-4 pb-4 z-50">
                 <NavButton icon={ShoppingBag} label="Store" active={activeTab === 'shop'} onClick={() => setActiveTab('shop')} />
                 <NavButton icon={Home} label="Play" active={activeTab === 'play'} onClick={() => setActiveTab('play')} />
                 <NavButton icon={Award} label="Wins" active={activeTab === 'payout'} onClick={() => setActiveTab('payout')} />
