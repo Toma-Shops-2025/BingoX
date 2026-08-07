@@ -155,12 +155,21 @@ export default function BingoXGame() {
     }, [isAutoPlaying, activeTab]);
 
     const endGame = async (msg: string) => {
-        setGameOver(true); setWinType(msg); setIsAutoPlaying(false);
+        setGameOver(true);
+        setWinType(msg);
+        setIsAutoPlaying(false);
+
         if (sessionScore > 0) {
-            toast.info("Saving round score...");
-            await addJS(sessionScore);
+            toast.promise(addJS(sessionScore), {
+                loading: 'Syncing score...',
+                success: 'Score saved to Bank!',
+                error: 'Sync failed'
+            });
         }
-        showInterstitial();
+
+        setTimeout(() => {
+            showInterstitial();
+        }, 1200);
     };
 
     useEffect(() => {
