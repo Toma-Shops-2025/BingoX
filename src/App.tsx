@@ -1,9 +1,10 @@
 import BingoXGame from './routes/index'
 import { useEffect } from 'react'
 import { Capacitor } from '@capacitor/core'
+import { Toaster } from 'sonner'
 
 function App() {
-  console.log("App: Launching Bingo X Hub v2.0");
+  console.log("App: Launching Bingo X Hub v2.1");
 
   useEffect(() => {
     // Initialize Edge-to-Edge for Bingo X
@@ -15,7 +16,10 @@ function App() {
   }, []);
 
   return (
-    <BingoXGame />
+    <>
+      <BingoXGame />
+      <Toaster position="top-center" richColors theme="dark" />
+    </>
   )
 }
 

@@ -29,8 +29,6 @@ const REWARDS = [
     { id: 'a5', name: '$5 Amazon Gift', jp: 250000, type: 'Amazon' },
     { id: 'p5', name: '$5 PayPal Cash', jp: 250000, type: 'PayPal' },
     { id: 'v10', name: '$10 Visa Card', jp: 500000, type: 'Visa' },
-    { id: 'a10', name: '$10 Amazon Gift', jp: 500000, type: 'Amazon' },
-    { id: 'p10', name: '$10 PayPal Cash', jp: 500000, type: 'PayPal' },
 ];
 
 export default function BingoXGame() {
@@ -94,6 +92,7 @@ export default function BingoXGame() {
     const processWins = useCallback((winResult: any) => {
         let extra = 0;
         let triggered = false;
+
         winResult.patterns.forEach((p: any) => {
             const key = p.join(',');
             if (!completedPatterns.includes(key)) {
@@ -103,21 +102,24 @@ export default function BingoXGame() {
                 toast.success(`BINGO! +${CONFIG.BINGO_BONUS.toLocaleString()} JS`, { icon: '🔥' });
             }
         });
+
         if (winResult.isXPattern && !hasAwardedX) {
             extra += CONFIG.X_PATTERN_BONUS;
             setHasAwardedX(true); triggered = true;
             toast.success(`X-PATTERN! +${CONFIG.X_PATTERN_BONUS.toLocaleString()} JS`, { icon: '💎', duration: 4000 });
         }
+
         if (winResult.isFullHouse && !hasAwardedFullHouse) {
             extra += 50000;
             setHasAwardedFullHouse(true); triggered = true;
             toast.success(`FULL HOUSE! +50,000 JS`, { icon: '🏆', duration: 5000 });
             setTimeout(() => { endGame("FULL HOUSE"); }, 2000);
         }
+
         if (triggered) {
             new Audio('/audio/sfx/bingo.mp3').play().catch(() => {});
             setShowBingoCelebration(true);
-            setTimeout(() => setShowBingoCelebration(false), 3000);
+            setTimeout(() => setShowBingoCelebration(false), 3500);
             setSessionScore(prev => prev + extra);
         }
     }, [completedPatterns, hasAwardedX, hasAwardedFullHouse]);
@@ -153,13 +155,11 @@ export default function BingoXGame() {
     }, [isAutoPlaying, activeTab]);
 
     const endGame = async (msg: string) => {
-        setGameOver(true);
-        setWinType(msg);
-        setIsAutoPlaying(false);
-
-        if (sessionScore > 0) await addJS(sessionScore);
-
-        // SHOW AD AFTER EVERY GAME
+        setGameOver(true); setWinType(msg); setIsAutoPlaying(false);
+        if (sessionScore > 0) {
+            toast.info("Saving round score...");
+            await addJS(sessionScore);
+        }
         showInterstitial();
     };
 
@@ -170,20 +170,21 @@ export default function BingoXGame() {
         }
     }, []);
 
-    useEffect(() => {
-        if (user && Capacitor.isNativePlatform()) {
-            setBannerVisible(true);
-        }
-    }, [user, activeTab]);
-
     const handleLuckyDaub = async () => {
         if (gameOver || isProcessing) return;
         setIsProcessing(true);
+
+        if (!Capacitor.isNativePlatform()) {
+            toast.info("Simulating ad for web testing...");
+            await new Promise(r => setTimeout(r, 1500));
+        }
+
         const ad = await showRewardedAd();
         if (!ad.success) {
             setIsProcessing(false);
             return;
         }
+
         setBoard(prev => {
             const next = [...prev];
             const availableCells: any[] = [];
@@ -301,6 +302,7 @@ export default function BingoXGame() {
                         {isSubmitting && <Loader2 className="h-5 w-5 animate-spin" />}
                         {isLogin ? 'Login' : 'Create Account'}
                     </button>
+                    <button type="button" onClick={() => setIsLogin(!isLogin)} className="w-full text-center text-[10px] text-white/20 font-black uppercase mt-6 tracking-widest italic">{isLogin ? "Join the X Empire" : "Back to Login"}</button>
                 </form>
             </div>
         )
@@ -423,7 +425,7 @@ export default function BingoXGame() {
                 {activeTab === 'shop' && (
                     <div className="w-full py-8 animate-in slide-in-from-right duration-300">
                         <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-cyan-400 text-center">Store</h2>
-                        <div className="space-y-4">
+                        <div className="space-y-4 px-2">
                             <div className="bg-white/5 border border-white/10 p-6 rounded-[40px] flex justify-between items-center shadow-xl">
                                 <div className="flex flex-col text-left">
                                     <span className="font-black text-xl italic uppercase leading-none mb-1">Double JS</span>
@@ -449,7 +451,7 @@ export default function BingoXGame() {
                              <h3 className="text-2xl font-black uppercase italic leading-none mb-2">Jackpot Rewards</h3>
                              <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mb-6">Redeem points for real world money</p>
                              <div className="grid grid-cols-1 gap-2">
-                                {REWARDS.slice(0, 4).map(r => (
+                                {REWARDS.map(r => (
                                     <div key={r.id} onClick={() => handlePayoutRequest(r)} className={cn("bg-black/40 border p-4 rounded-2xl flex justify-between items-center", (profile?.jackpot_score || 0) >= r.jp ? "border-emerald-500/50" : "border-white/5 opacity-40")}>
                                         <span className="font-black italic uppercase text-xs">{r.name}</span>
                                         <span className="text-[9px] font-bold">{r.jp.toLocaleString()} JS</span>
@@ -464,14 +466,20 @@ export default function BingoXGame() {
                 )}
             </div>
 
-            <nav className="fixed bottom-0 left-0 right-0 h-24 bg-[#050510]/95 backdrop-blur-3xl border-t border-white/10 flex justify-around items-center px-4 pb-4 z-50">
+            <nav className="fixed bottom-0 left-0 right-0 h-24 bg-[#050510]/95 backdrop-blur-3xl border-t border-white/10 flex justify-around items-center px-4 pb-4 z-[5000]">
                 <NavButton icon={ShoppingBag} label="Store" active={activeTab === 'shop'} onClick={() => setActiveTab('shop')} />
                 <NavButton icon={Home} label="Play" active={activeTab === 'play'} onClick={() => setActiveTab('play')} />
                 <NavButton icon={Award} label="Wins" active={activeTab === 'payout'} onClick={() => setActiveTab('payout')} />
             </nav>
 
+            {showBingoCelebration && (
+                <div className="fixed inset-0 z-[10000] pointer-events-none flex items-center justify-center overflow-hidden bg-black/20 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="animate-bounce text-7xl font-black italic text-primary drop-shadow-[0_0_30px_rgba(34,211,238,0.8)] uppercase tracking-tighter">BINGO!</div>
+                </div>
+            )}
+
             {gameOver && (
-                <div className="fixed inset-0 z-[2000] bg-black/95 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-700 backdrop-blur-md">
+                <div className="fixed inset-0 z-[9000] bg-black/95 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-700 backdrop-blur-md">
                     <Trophy className={cn("h-32 w-32 mb-8 drop-shadow-glow scale-125", sessionScore === 0 ? "text-red-500" : "text-yellow-400")} />
                     <h2 className={cn("text-7xl font-black italic mb-2 uppercase tracking-tighter leading-none", sessionScore === 0 ? "text-red-500" : "text-white")}>{winType}</h2>
                     <div className="bg-white/5 border-2 border-white/10 p-10 rounded-[50px] mb-12 relative overflow-hidden text-center">
@@ -488,7 +496,7 @@ export default function BingoXGame() {
 
 function NavButton({ icon: Icon, label, active, onClick }: { icon: any, label: string, active: boolean, onClick: () => void }) {
     return (
-      <button onClick={onClick} className={cn("flex flex-col items-center justify-center gap-1.5 w-20 py-2 transition-all active:scale-90", active ? "text-primary scale-110" : "text-white/30")}>
+      <button onClick={onClick} className={cn("flex flex-col items-center justify-center gap-1 w-20 py-2 transition-all active:scale-90", active ? "text-primary scale-110" : "text-white/30")}>
         <Icon className={cn("h-6 w-6", active && "fill-current")} />
         <span className={cn("text-[8px] font-black uppercase tracking-widest", active ? "opacity-100" : "opacity-40")}>{label}</span>
       </button>
