@@ -14,12 +14,14 @@ export function useAuth() {
 
         if (error) {
             console.error("Auth: fetchProfile error", error);
+            setLoading(false);
             return;
         }
 
         if (data) {
             setProfile(data);
         } else {
+            // New user - create profile
             const { data: { session } } = await supabase.auth.getSession();
             const username = session?.user?.user_metadata?.username || session?.user?.email?.split('@')[0] || 'Gamer';
 
@@ -28,7 +30,8 @@ export function useAuth() {
                 .insert({
                     id: userId,
                     username: username,
-                    jackpot_score: 0
+                    jackpot_score: 0,
+                    total_earned: 0
                 })
                 .select()
                 .single();
@@ -43,6 +46,14 @@ export function useAuth() {
   }, []);
 
   useEffect(() => {
+    // Timeout to prevent infinite loading screen
+    const timer = setTimeout(() => {
+        if (loading) {
+            console.warn("Auth: Loading timed out, assuming no session");
+            setLoading(false);
+        }
+    }, 5000);
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
           setUser(session.user);
@@ -50,6 +61,10 @@ export function useAuth() {
       } else {
           setLoading(false);
       }
+      clearTimeout(timer);
+    }).catch(() => {
+        setLoading(false);
+        clearTimeout(timer);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -63,28 +78,20 @@ export function useAuth() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+        subscription.unsubscribe();
+        clearTimeout(timer);
+    };
   }, [fetchProfile]);
 
   const addJS = useCallback(async (amount: number) => {
     if (!user) return;
 
     try {
-        // 1. Update jackpot_score (current balance)
         const { error: scoreErr } = await supabase.rpc('increment_jackpot_score', {
             user_id: user.id,
             amount: amount
         });
-
-        // 2. If it's a positive gain, also update total_earned (for leaderboard)
-        if (amount > 0) {
-            await supabase.rpc('increment_total_earned', {
-                user_id: user.id,
-                amount: amount
-            }).catch(() => {
-                console.warn("total_earned column might not exist yet");
-            });
-        }
 
         if (scoreErr) {
             console.warn("RPC failed, attempting manual update...");
@@ -98,7 +105,6 @@ export function useAuth() {
             }).eq('id', user.id);
         }
 
-        // FORCE SYNC
         await fetchProfile(user.id);
     } catch (e) {
         console.error("Score sync failed", e);
@@ -114,16 +120,16 @@ export function useAuth() {
     const { data, error } = await supabase.auth.signUp({
         email,
         password: pass,
-        options: { data: { username, display_name: username } }
+        options: { data: { username } }
     });
     if (error) throw error;
     if (data.user) {
-        // Now saving email to profiles for easy admin access
         await supabase.from('profiles').insert({
             id: data.user.id,
             username,
             email,
-            jackpot_score: 0
+            jackpot_score: 0,
+            total_earned: 0
         });
     }
   };
