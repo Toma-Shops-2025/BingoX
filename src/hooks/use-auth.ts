@@ -30,7 +30,7 @@ export function useAuth() {
                 .insert({
                     id: userId,
                     username: username,
-                    jackpot_score: 0,
+                    cash_balance: 0,
                     total_earned: 0
                 })
                 .select()
@@ -84,30 +84,31 @@ export function useAuth() {
     };
   }, [fetchProfile]);
 
-  const addJS = useCallback(async (amount: number) => {
+  const addCash = useCallback(async (amount: number, game: string = 'Bingo X') => {
     if (!user) return;
 
     try {
-        const { error: scoreErr } = await supabase.rpc('increment_jackpot_score', {
-            user_id: user.id,
-            amount: amount
+        const { error } = await supabase.rpc('claim_game_reward', {
+            p_game: game,
+            p_score: 1,
+            p_reward_est: amount
         });
 
-        if (scoreErr) {
+        if (error) {
             console.warn("RPC failed, attempting manual update...");
-            const { data: current } = await supabase.from('profiles').select('jackpot_score, total_earned').eq('id', user.id).single();
-            const newTotal = (current?.jackpot_score || 0) + amount;
+            const { data: current } = await supabase.from('profiles').select('cash_balance, total_earned').eq('id', user.id).single();
+            const newTotal = (current?.cash_balance || 0) + amount;
             const newLifetime = (current?.total_earned || 0) + (amount > 0 ? amount : 0);
 
             await supabase.from('profiles').update({
-                jackpot_score: newTotal,
+                cash_balance: newTotal,
                 total_earned: newLifetime
             }).eq('id', user.id);
         }
 
         await fetchProfile(user.id);
     } catch (e) {
-        console.error("Score sync failed", e);
+        console.error("Cash sync failed", e);
     }
   }, [user, fetchProfile]);
 
@@ -123,20 +124,12 @@ export function useAuth() {
         options: { data: { username } }
     });
     if (error) throw error;
-    if (data.user) {
-        await supabase.from('profiles').insert({
-            id: data.user.id,
-            username,
-            email,
-            jackpot_score: 0,
-            total_earned: 0
-        });
-    }
+    // Database trigger handles the rest!
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
   };
 
-  return { user, profile, loading, signIn, signUp, signOut, addJS, supabase, fetchProfile };
+  return { user, profile, loading, signIn, signUp, signOut, addCash, supabase, fetchProfile };
 }

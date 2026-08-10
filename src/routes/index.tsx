@@ -25,15 +25,15 @@ const COLUMN_THEMES = {
 const GAME_TRACKS = ['game1.mp3', 'game2.mp3', 'game3.mp3', 'game4.mp3', 'game5.mp3', 'game6.mp3', 'game7.mp3', 'game8.mp3', 'game9.mp3', 'game10.mp3'];
 
 const REWARDS = [
-    { id: 'v5', name: '$5 Visa Card', jp: 250000, type: 'Visa' },
-    { id: 'a5', name: '$5 Amazon Gift', jp: 250000, type: 'Amazon' },
-    { id: 'p5', name: '$5 PayPal Cash', jp: 250000, type: 'PayPal' },
-    { id: 'v10', name: '$10 Visa Card', jp: 500000, type: 'Visa' },
+    { id: 'v5', name: '$5 Visa Card', jp: 5.00, type: 'Visa' },
+    { id: 'a5', name: '$5 Amazon Gift', jp: 5.00, type: 'Amazon' },
+    { id: 'p5', name: '$5 PayPal Cash', jp: 5.00, type: 'PayPal' },
+    { id: 'v10', name: '$10 Visa Card', jp: 10.00, type: 'Visa' },
 ];
 
 export default function BingoXGame() {
-    const { user, profile, loading, signIn, signUp, signOut, addJS, supabase } = useAuth()
-    const { purchase } = useBilling(addJS)
+    const { user, profile, loading, signIn, signUp, signOut, addCash, supabase } = useAuth()
+    const { purchase } = useBilling(addCash)
 
     const [activeTab, setActiveTab] = useState<'play' | 'shop' | 'payout' | 'catalog' | 'how_to_play'>('play')
     const [isMuted, setIsMuted] = useState(false)
@@ -97,22 +97,22 @@ export default function BingoXGame() {
             const key = p.join(',');
             if (!completedPatterns.includes(key)) {
                 setCompletedPatterns(prev => [...prev, key]);
-                extra += CONFIG.BINGO_BONUS;
+                extra += 500; // js points for session
                 triggered = true;
-                toast.success(`BINGO! +${CONFIG.BINGO_BONUS.toLocaleString()} JS`, { icon: '🔥' });
+                toast.success(`BINGO! +500 pts`, { icon: '🔥' });
             }
         });
 
         if (winResult.isXPattern && !hasAwardedX) {
-            extra += CONFIG.X_PATTERN_BONUS;
+            extra += 1000;
             setHasAwardedX(true); triggered = true;
-            toast.success(`X-PATTERN! +${CONFIG.X_PATTERN_BONUS.toLocaleString()} JS`, { icon: '💎', duration: 4000 });
+            toast.success(`X-PATTERN! +1,000 pts`, { icon: '💎', duration: 4000 });
         }
 
         if (winResult.isFullHouse && !hasAwardedFullHouse) {
-            extra += 50000;
+            extra += 5000;
             setHasAwardedFullHouse(true); triggered = true;
-            toast.success(`FULL HOUSE! +50,000 JS`, { icon: '🏆', duration: 5000 });
+            toast.success(`FULL HOUSE! +5,000 pts`, { icon: '🏆', duration: 5000 });
             setTimeout(() => { endGame("FULL HOUSE"); }, 2000);
         }
 
@@ -157,7 +157,8 @@ export default function BingoXGame() {
     const endGame = async (msg: string) => {
         setGameOver(true); setWinType(msg); setIsAutoPlaying(false);
         if (sessionScore > 0) {
-            toast.promise(addJS(sessionScore), {
+            const cashAmount = (sessionScore / 10000); // 10k points = $1.00
+            toast.promise(addCash(cashAmount), {
                 loading: 'Syncing score...',
                 success: 'Score saved to Bank!',
                 error: 'Sync failed'
@@ -220,8 +221,8 @@ export default function BingoXGame() {
 
     useEffect(() => {
         if (activeTab === 'payout' && supabase) {
-            supabase.from('profiles').select('username, jackpot_score, total_earned')
-                .or('jackpot_score.gt.0,total_earned.gt.0')
+            supabase.from('profiles').select('username, cash_balance, total_earned')
+                .or('cash_balance.gt.0,total_earned.gt.0')
                 .order('total_earned', { ascending: false }).limit(10)
                 .then(({ data }) => { if (data) setLeaderboard(data); });
         }
@@ -233,19 +234,19 @@ export default function BingoXGame() {
         if (cell.number === "FREE" || calledNumbers.includes(cell.number as number)) {
             if (cell.marked) return;
             const nb = [...board]; nb[r][c].marked = true; setBoard(nb);
-            let earned = CONFIG.POINTS_PER_DAUB + Math.floor((100 - progress) * 5);
+            let earned = 10 + Math.floor((100 - progress) * 0.5);
             setSessionScore(prev => prev + earned);
             processWins(BingoEngine.checkWins(nb));
         }
     }
 
     const handlePayoutRequest = async (reward: any) => {
-        if ((profile?.jackpot_score || 0) < reward.jp) return;
-        if (!confirm(`Redeem ${reward.jp.toLocaleString()} JS for a ${reward.name}?`)) return;
+        if ((profile?.cash_balance || 0) < reward.jp) return;
+        if (!confirm(`Redeem $${reward.jp.toFixed(2)} for a ${reward.name}?`)) return;
         try {
-            const { error } = await supabase.from('payout_requests').insert({ user_id: user?.id, reward_name: reward.name, points_cost: reward.jp, status: 'pending' });
+            const { error } = await supabase.from('payout_requests').insert({ user_id: user?.id, reward_name: reward.name, points_cost: (reward.jp * 1000), status: 'pending' });
             if (error) throw error;
-            await addJS(-reward.jp);
+            await addCash(-reward.jp);
             toast.success("Redemption Submitted!");
         } catch (e: any) { console.error(e); }
     }
@@ -275,57 +276,66 @@ export default function BingoXGame() {
 
     if (!user) {
         return (
-            <div className="h-screen w-full bg-[#050510] flex flex-col items-center justify-center p-8 text-white relative text-left">
-                <img src="logo.png" className="w-48 h-48 mb-6 drop-shadow-glow" alt="Logo" />
-                <h1 className="text-5xl font-black italic mb-2 text-primary tracking-tighter uppercase text-center leading-none w-full">Bingo X</h1>
-                <p className="text-white/40 uppercase tracking-[0.4em] text-[9px] mb-12 font-bold text-center w-full">Skill Edition</p>
-                <form onSubmit={handleAuth} className="w-full max-w-sm space-y-3">
-                    {!isLogin && (
-                        <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
-                            <UserIcon className="h-5 w-5 text-white/40 mr-3" />
-                            <input type="text" placeholder="Username" className="bg-transparent outline-none w-full font-bold text-white" value={usernameInput} onChange={e => setUsernameInput(e.target.value)} required />
+            <div className="h-screen w-full bg-[#050510] flex flex-col items-center justify-center p-8 text-white relative text-left overflow-hidden">
+                <div className="absolute inset-0 z-0">
+                    <img src="/background.png" className="w-full h-full object-cover opacity-30" alt="" />
+                </div>
+                <div className="relative z-10 w-full max-w-sm flex flex-col items-center">
+                    <img src="logo.png" className="w-48 h-48 mb-6 drop-shadow-glow" alt="Logo" />
+                    <h1 className="text-5xl font-black italic mb-2 text-primary tracking-tighter uppercase text-center leading-none w-full">Bingo X</h1>
+                    <p className="text-white/40 uppercase tracking-[0.4em] text-[9px] mb-12 font-bold text-center w-full">Skill Edition</p>
+                    <form onSubmit={handleAuth} className="w-full space-y-3">
+                        {!isLogin && (
+                            <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4 backdrop-blur-sm">
+                                <UserIcon className="h-5 w-5 text-white/40 mr-3" />
+                                <input type="text" placeholder="Username" className="bg-transparent outline-none w-full font-bold text-white" value={usernameInput} onChange={e => setUsernameInput(e.target.value)} required />
+                            </div>
+                        )}
+                        <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4 backdrop-blur-sm">
+                            <Mail className="h-5 w-5 text-white/40 mr-3" />
+                            <input type="email" placeholder="Email" className="bg-transparent outline-none w-full font-bold text-white" value={email} onChange={e => setEmail(e.target.value)} required />
                         </div>
-                    )}
-                    <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
-                        <Mail className="h-5 w-5 text-white/40 mr-3" />
-                        <input type="email" placeholder="Email" className="bg-transparent outline-none w-full font-bold text-white" value={email} onChange={e => setEmail(e.target.value)} required />
-                    </div>
-                    <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4">
-                        <Lock className="h-5 w-5 text-white/40 mr-3" />
-                        <input type={showPass ? "text" : "password"} placeholder="Password" name="password" className="bg-transparent outline-none w-full font-bold text-white" value={password} onChange={e => setPassword(e.target.value)} required />
-                        <button type="button" onClick={() => setShowPass(!showPass)}>{showPass ? <EyeOff className="h-4 w-4 opacity-30" /> : <Eye className="h-4 w-4 opacity-30" />}</button>
-                    </div>
-                    {!isLogin && (
-                        <div className="flex items-center gap-3 px-2 py-2">
-                            <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="accent-primary" />
-                            <span className="text-[10px] text-white/40 font-bold uppercase">18+ / Agree to Terms</span>
+                        <div className="bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-4 backdrop-blur-sm">
+                            <Lock className="h-5 w-5 text-white/40 mr-3" />
+                            <input type={showPass ? "text" : "password"} placeholder="Password" name="password" className="bg-transparent outline-none w-full font-bold text-white" value={password} onChange={e => setPassword(e.target.value)} required />
+                            <button type="button" onClick={() => setShowPass(!showPass)}>{showPass ? <EyeOff className="h-4 w-4 opacity-30" /> : <Eye className="h-4 w-4 opacity-30" />}</button>
                         </div>
-                    )}
-                    <button type="submit" disabled={isSubmitting} className="w-full bg-primary py-5 rounded-3xl font-black uppercase tracking-widest shadow-glow mt-4 active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-2">
-                        {isSubmitting && <Loader2 className="h-5 w-5 animate-spin" />}
-                        {isLogin ? 'Login' : 'Create Account'}
-                    </button>
-                    <button type="button" onClick={() => setIsLogin(!isLogin)} className="w-full text-center text-[10px] text-white/20 font-black uppercase mt-6 tracking-widest italic">{isLogin ? "Join the X Empire" : "Back to Login"}</button>
-                </form>
+                        {!isLogin && (
+                            <div className="flex items-center gap-3 px-2 py-2">
+                                <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="accent-primary" />
+                                <span className="text-[10px] text-white/40 font-bold uppercase">18+ / Agree to Terms</span>
+                            </div>
+                        )}
+                        <button type="submit" disabled={isSubmitting} className="w-full bg-primary py-5 rounded-3xl font-black uppercase tracking-widest shadow-glow mt-4 active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-2">
+                            {isSubmitting && <Loader2 className="h-5 w-5 animate-spin" />}
+                            {isLogin ? 'Login' : 'Create Account'}
+                        </button>
+                        <button type="button" onClick={() => setIsLogin(!isLogin)} className="w-full text-center text-[10px] text-white/20 font-black uppercase mt-6 tracking-widest italic">{isLogin ? "Join the X Empire" : "Back to Login"}</button>
+                    </form>
+                </div>
             </div>
         )
     }
 
     return (
         <div className="h-screen w-full bg-[#02020a] text-white font-sans flex flex-col items-center overflow-hidden relative">
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-                <span className="text-[90vh] font-black italic opacity-[0.12] shadow-x-glow animate-float-slow select-none">X</span>
-            </div>
+            <motion.div
+                className="absolute inset-0 z-0"
+                animate={{ scale: [1, 1.05, 1], opacity: [0.2, 0.4, 0.2] }}
+                transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+            >
+                <img src="/background.png" className="w-full h-full object-cover pointer-events-none" alt="" />
+            </motion.div>
 
             <div className="flex-1 w-full max-w-md flex flex-col items-center z-10 overflow-y-auto px-4 pt-10 pb-32 no-scrollbar">
                 {activeTab === 'play' && (
                     <>
                         <div className="w-full flex justify-between items-start mb-6 px-2 text-left">
                             <div className="flex flex-col gap-2">
-                                <button onClick={() => setIsMuted(!isMuted)} className="p-3 bg-white/5 rounded-xl border border-white/10 active:scale-90">
+                                <button onClick={() => setIsMuted(!isMuted)} className="p-3 bg-white/5 backdrop-blur-md rounded-xl border border-white/10 active:scale-90">
                                     {isMuted ? <VolumeX className="h-5 w-5 text-white/40" /> : <Volume2 className="h-5 w-5 text-primary" />}
                                 </button>
-                                <button onClick={() => signOut()} className="p-3 bg-white/5 rounded-xl border border-white/10 active:scale-90 text-red-500">
+                                <button onClick={() => signOut()} className="p-3 bg-white/5 backdrop-blur-md rounded-xl border border-white/10 active:scale-90 text-red-500">
                                     <LogOut className="h-5 w-5" />
                                 </button>
                             </div>
@@ -334,11 +344,11 @@ export default function BingoXGame() {
                                     <div className="absolute top-0 left-0 w-1 h-full bg-primary/40" />
                                     <div className="text-[9px] uppercase font-black opacity-30 mb-1 tracking-widest">Account Bank</div>
                                     <div className="flex items-center gap-2">
-                                        <Zap className="h-4 w-4 text-yellow-400 fill-yellow-400 drop-shadow-glow" />
-                                        <span className="text-2xl font-black italic tracking-tighter text-white">{(profile?.jackpot_score || 0).toLocaleString()} JS</span>
+                                        <div className="w-4 h-4 bg-yellow-400 rounded-full shadow-[0_0_10px_#facc15]" />
+                                        <span className="text-2xl font-black italic tracking-tighter text-white">{(profile?.cash_balance || 0).toFixed(2)}</span>
                                     </div>
                                 </div>
-                                <div className="bg-primary/10 px-4 py-1.5 rounded-full text-[11px] font-black italic text-primary border border-primary/30 shadow-glow">ROUND: {sessionScore.toLocaleString()}</div>
+                                <div className="bg-primary/10 px-4 py-1.5 rounded-full text-[11px] font-black italic text-primary border border-primary/30 shadow-glow">ROUND PTS: {sessionScore.toLocaleString()}</div>
                                 <div className={cn("flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black italic border", timeLeft < 20 ? "text-red-500 border-red-500 animate-pulse bg-red-500/10" : "text-white/60 border-white/10 bg-white/5")}>
                                     <Clock className="h-3 w-3" />
                                     {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
