@@ -68,13 +68,24 @@ export async function showRewardedAd(): Promise<{ success: boolean }> {
   }
 }
 
-export async function showInterstitial(): Promise<void> {
-  if (!isNative()) return;
+export async function showInterstitial(): Promise<boolean> {
+  if (!isNative()) return false;
   try {
-    if (await ensureInitialized()) await UnityAds.showInterstitial();
+    const ready = await ensureInitialized();
+    if (!ready) return false;
+    await UnityAds.showInterstitial();
+    return true;
   } catch {
-    /* ignore */
+    return false;
   }
+}
+
+export async function hideBannerAd(): Promise<void> {
+  await setBannerVisible(false);
+}
+
+export async function showBannerAd(): Promise<void> {
+  await setBannerVisible(true);
 }
 
 export async function setBannerVisible(visible: boolean): Promise<void> {

@@ -11,7 +11,6 @@ apply from: "../capacitor-cordova-android-plugins/cordova.variables.gradle"
 dependencies {
     implementation project(':capacitor-browser')
     implementation project(':capawesome-capacitor-android-edge-to-edge-support')
-    implementation "com.applovin:applovin-sdk:13.2.0"
     implementation "com.android.billingclient:billing:9.0.0"
     implementation "androidx.core:core:1.9.0"
 }

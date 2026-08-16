@@ -3,7 +3,7 @@ import { BingoEngine, BingoCell } from '@/logic/BingoEngine'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useBilling, PRODUCT_DOUBLE_JS } from '@/hooks/use-billing'
-import { initAds, showRewardedAd, showInterstitial, setBannerVisible } from '@/lib/ads'
+import { initAds, showRewardedAd, showInterstitial, showBannerAd, hideBannerAd } from '@/lib/ads'
 import { CONFIG } from '@/config'
 import {
     Trophy, Zap, Pause, Play, Flame, Target, Star,
@@ -25,15 +25,15 @@ const COLUMN_THEMES = {
 const GAME_TRACKS = ['game1.mp3', 'game2.mp3', 'game3.mp3', 'game4.mp3', 'game5.mp3', 'game6.mp3', 'game7.mp3', 'game8.mp3', 'game9.mp3', 'game10.mp3'];
 
 const REWARDS = [
-    { id: 'v5', name: '$5 Visa Card', jp: 5.00, type: 'Visa' },
-    { id: 'a5', name: '$5 Amazon Gift', jp: 5.00, type: 'Amazon' },
-    { id: 'p5', name: '$5 PayPal Cash', jp: 5.00, type: 'PayPal' },
-    { id: 'v10', name: '$10 Visa Card', jp: 10.00, type: 'Visa' },
+    { id: 'v5', name: '$5 Visa Card', jsCost: 250_000, type: 'Visa' },
+    { id: 'a5', name: '$5 Amazon Gift', jsCost: 250_000, type: 'Amazon' },
+    { id: 'p5', name: '$5 PayPal Cash', jsCost: 250_000, type: 'PayPal' },
+    { id: 'v10', name: '$10 Visa Card', jsCost: 500_000, type: 'Visa' },
 ];
 
 export default function BingoXGame() {
-    const { user, profile, loading, signIn, signUp, signOut, addCash, supabase } = useAuth()
-    const { purchase } = useBilling(addCash)
+    const { user, profile, loading, signIn, signUp, signOut, addJS, supabase } = useAuth()
+    const { purchase, isReady: billingReady } = useBilling()
 
     const [activeTab, setActiveTab] = useState<'play' | 'shop' | 'payout' | 'catalog' | 'how_to_play'>('play')
     const [isMuted, setIsMuted] = useState(false)
@@ -54,17 +54,43 @@ export default function BingoXGame() {
     const [hasAwardedX, setHasAwardedX] = useState(false)
     const [hasAwardedFullHouse, setHasAwardedFullHouse] = useState(false)
     const [roundCounter, setRoundCounter] = useState(0)
+    const [isPausedForAd, setIsPausedForAd] = useState(false)
+    const wasAutoPlayingRef = useRef(false)
     const [leaderboard, setLeaderboard] = useState<any[]>([])
 
     // Audio Refs
     const bgmRef = useRef<HTMLAudioElement | null>(null)
     const callerRef = useRef<HTMLAudioElement | null>(null)
     const isMutedRef = useRef(false)
+    const isPausedForAdRef = useRef(false)
+
+    const pauseGameForAd = useCallback(() => {
+        isPausedForAdRef.current = true
+        wasAutoPlayingRef.current = isAutoPlaying
+        setIsPausedForAd(true)
+        setIsAutoPlaying(false)
+        if (bgmRef.current) bgmRef.current.pause()
+        if (callerRef.current) {
+            callerRef.current.pause()
+            callerRef.current.currentTime = 0
+        }
+    }, [isAutoPlaying])
+
+    const resumeGameAfterAd = useCallback(() => {
+        isPausedForAdRef.current = false
+        setIsPausedForAd(false)
+        if (wasAutoPlayingRef.current && !gameOver) {
+            setIsAutoPlaying(true)
+        }
+        if (bgmRef.current && !isMutedRef.current) {
+            bgmRef.current.play().catch(() => {})
+        }
+    }, [gameOver])
 
     useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
     useEffect(() => {
-        if (!user) return;
+        if (!user || isPausedForAd) return;
         if (!bgmRef.current) bgmRef.current = new Audio();
         bgmRef.current.loop = true;
         bgmRef.current.muted = isMuted;
@@ -77,10 +103,10 @@ export default function BingoXGame() {
             bgmRef.current.src = track;
             bgmRef.current.play().catch(() => {});
         }
-    }, [user, activeTab, isAutoPlaying, isMuted, roundCounter]);
+    }, [user, activeTab, isAutoPlaying, isMuted, roundCounter, isPausedForAd]);
 
     const playCall = useCallback((num: number) => {
-        if (isMutedRef.current) return;
+        if (isMutedRef.current || isPausedForAdRef.current) return;
         if (callerRef.current) { callerRef.current.pause(); callerRef.current.currentTime = 0; }
         let prefix = num <= 15 ? "B" : num <= 30 ? "I" : num <= 45 ? "N" : num <= 60 ? "G" : "O";
         const audio = new Audio(`/audio/calls/${prefix}-${num}.MP3`);
@@ -125,7 +151,7 @@ export default function BingoXGame() {
     }, [completedPatterns, hasAwardedX, hasAwardedFullHouse]);
 
     const pickNumber = useCallback(() => {
-        if (gameOver || !isAutoPlaying || hasAwardedFullHouse) return;
+        if (gameOver || !isAutoPlaying || hasAwardedFullHouse || isPausedForAd) return;
         setCalledNumbers(prev => {
             const rem = Array.from({length:75},(_,i)=>i+1).filter(n=>!prev.includes(n));
             if (rem.length === 0) { endGame("BOARD FULL"); return prev; }
@@ -133,58 +159,72 @@ export default function BingoXGame() {
             setCurrentCall(next); setProgress(0); playCall(next);
             return [next, ...prev];
         });
-    }, [gameOver, isAutoPlaying, playCall, hasAwardedFullHouse]);
+    }, [gameOver, isAutoPlaying, playCall, hasAwardedFullHouse, isPausedForAd]);
 
     useEffect(() => {
-        let i: any; if (isAutoPlaying && !gameOver && activeTab === 'play') i = setInterval(pickNumber, 3500);
+        let i: any; if (isAutoPlaying && !gameOver && !isPausedForAd && activeTab === 'play') i = setInterval(pickNumber, 3500);
         return () => clearInterval(i);
-    }, [isAutoPlaying, gameOver, activeTab, pickNumber]);
+    }, [isAutoPlaying, gameOver, isPausedForAd, activeTab, pickNumber]);
 
     useEffect(() => {
-        let t: any; if (isAutoPlaying && !gameOver && activeTab === 'play' && timeLeft > 0) t = setInterval(() => {
+        let t: any; if (isAutoPlaying && !gameOver && !isPausedForAd && activeTab === 'play' && timeLeft > 0) t = setInterval(() => {
             setTimeLeft(p => { if (p <= 1) { endGame(sessionScore > 0 ? "TIME'S UP!" : "GAME OVER"); return 0; } return p - 1; });
         }, 1000);
         return () => clearInterval(t);
-    }, [isAutoPlaying, gameOver, activeTab, timeLeft, sessionScore]);
+    }, [isAutoPlaying, gameOver, isPausedForAd, activeTab, timeLeft, sessionScore]);
 
     useEffect(() => {
-        if (isAutoPlaying && activeTab === 'play') {
+        if (isAutoPlaying && activeTab === 'play' && !isPausedForAd) {
             const t = setInterval(() => setProgress(p => (p >= 100 ? 0 : p + 2.86)), 100);
             return () => clearInterval(t);
         }
-    }, [isAutoPlaying, activeTab]);
+    }, [isAutoPlaying, activeTab, isPausedForAd]);
 
     const endGame = async (msg: string) => {
-        setGameOver(true); setWinType(msg); setIsAutoPlaying(false);
+        pauseGameForAd();
+        setGameOver(true);
+        setWinType(msg);
         if (sessionScore > 0) {
-            const cashAmount = (sessionScore / 10000); // 10k points = $1.00
-            toast.promise(addCash(cashAmount), {
-                loading: 'Syncing score...',
+            toast.promise(addJS(sessionScore), {
+                loading: 'Syncing JS...',
                 success: 'Score saved to Bank!',
                 error: 'Sync failed'
             });
         }
-        showInterstitial();
+        if (Capacitor.isNativePlatform()) {
+            await hideBannerAd();
+            await showInterstitial();
+            await showBannerAd();
+        }
+        resumeGameAfterAd();
     };
 
     useEffect(() => {
-        if (Capacitor.isNativePlatform()) {
-            initAds();
-            setBannerVisible(true);
-        }
+        if (!Capacitor.isNativePlatform()) return;
+        initAds().then(() => showBannerAd()).catch(() => {});
     }, []);
 
-    const handleLuckyDaub = async () => {
-        if (gameOver || isProcessing) return;
-        setIsProcessing(true);
+    useEffect(() => {
+        if (!Capacitor.isNativePlatform()) return;
+        showBannerAd().catch(() => {});
+    }, [activeTab]);
 
-        if (!Capacitor.isNativePlatform()) {
+    const handleLuckyDaub = async () => {
+        if (gameOver || isProcessing || isPausedForAd) return;
+        setIsProcessing(true);
+        pauseGameForAd();
+
+        if (Capacitor.isNativePlatform()) {
+            await hideBannerAd();
+        } else {
             toast.info("Simulating ad for web testing...");
             await new Promise(r => setTimeout(r, 1500));
         }
 
         const ad = await showRewardedAd();
         if (!ad.success) {
+            if (Capacitor.isNativePlatform()) await showBannerAd();
+            resumeGameAfterAd();
             setIsProcessing(false);
             return;
         }
@@ -208,6 +248,8 @@ export default function BingoXGame() {
             return next;
         });
         toast.success("LUCKY DAUB!", { description: "2 random numbers marked!", icon: '✨' });
+        if (Capacitor.isNativePlatform()) await showBannerAd();
+        resumeGameAfterAd();
         setIsProcessing(false);
     }
 
@@ -240,15 +282,24 @@ export default function BingoXGame() {
         }
     }
 
-    const handlePayoutRequest = async (reward: any) => {
-        if ((profile?.cash_balance || 0) < reward.jp) return;
-        if (!confirm(`Redeem $${reward.jp.toFixed(2)} for a ${reward.name}?`)) return;
+    const handlePayoutRequest = async (reward: typeof REWARDS[number]) => {
+        const jsBalance = profile?.jackpot_score || 0;
+        if (jsBalance < reward.jsCost) return;
+        if (!confirm(`Redeem ${reward.name} for ${reward.jsCost.toLocaleString()} JS?`)) return;
         try {
-            const { error } = await supabase.from('payout_requests').insert({ user_id: user?.id, reward_name: reward.name, points_cost: (reward.jp * 1000), status: 'pending' });
+            const { error } = await supabase.from('payout_requests').insert({
+                user_id: user?.id,
+                reward_name: reward.name,
+                points_cost: reward.jsCost,
+                status: 'pending',
+            });
             if (error) throw error;
-            await addCash(-reward.jp);
+            await addJS(-reward.jsCost);
             toast.success("Redemption Submitted!");
-        } catch (e: any) { console.error(e); }
+        } catch (e: any) {
+            console.error(e);
+            toast.error("Redemption failed");
+        }
     }
 
     const [email, setEmail] = useState('');
@@ -278,7 +329,8 @@ export default function BingoXGame() {
         return (
             <div className="h-screen w-full bg-[#050510] flex flex-col items-center justify-center p-8 text-white relative text-left overflow-hidden">
                 <div className="absolute inset-0 z-0">
-                    <img src="/background.png" className="w-full h-full object-cover opacity-30" alt="" />
+                    <img src="/background.png" className="w-full h-full object-cover opacity-45" alt="" />
+                    <div className="absolute inset-0 bg-[#050510]/75" />
                 </div>
                 <div className="relative z-10 w-full max-w-sm flex flex-col items-center">
                     <img src="logo.png" className="w-48 h-48 mb-6 drop-shadow-glow" alt="Logo" />
@@ -324,11 +376,16 @@ export default function BingoXGame() {
 
     return (
         <div className="h-screen w-full bg-[#02020a] text-white font-sans flex flex-col items-center overflow-hidden relative">
-            <div className="absolute inset-0 z-0 animate-float-slow">
-                <img src="/background.png" className="w-full h-full object-cover pointer-events-none opacity-30" alt="" />
+            <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+                <img src="/background.png" className="absolute inset-0 w-full h-full object-cover opacity-45" alt="" />
+                <div className="absolute inset-0 bg-[#02020a]/70" />
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 animate-float-slow opacity-25">
+                    <span className="text-[min(72vw,380px)] font-black italic leading-none text-cyan-400 shadow-x-glow select-none">X</span>
+                </div>
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.06),transparent_65%)]" />
             </div>
 
-            <div className="flex-1 w-full max-w-md flex flex-col items-center z-10 overflow-y-auto px-4 pt-10 pb-32 no-scrollbar">
+            <div className="flex-1 w-full max-w-md flex flex-col items-center z-10 overflow-y-auto px-4 pt-10 pb-40 no-scrollbar">
                 {activeTab === 'play' && (
                     <>
                         <div className="w-full flex justify-between items-start mb-6 px-2 text-left">
@@ -346,7 +403,8 @@ export default function BingoXGame() {
                                     <div className="text-[9px] uppercase font-black opacity-30 mb-1 tracking-widest">Account Bank</div>
                                     <div className="flex items-center gap-2">
                                         <div className="w-4 h-4 bg-yellow-400 rounded-full shadow-[0_0_10px_#facc15]" />
-                                        <span className="text-2xl font-black italic tracking-tighter text-white">{(profile?.cash_balance || 0).toFixed(2)}</span>
+                                        <span className="text-2xl font-black italic tracking-tighter text-white">{(profile?.jackpot_score || 0).toLocaleString()}</span>
+                                        <span className="text-[10px] font-black text-white/40">JS</span>
                                     </div>
                                 </div>
                                 <div className="bg-primary/10 px-4 py-1.5 rounded-full text-[11px] font-black italic text-primary border border-primary/30 shadow-glow">ROUND PTS: {sessionScore.toLocaleString()}</div>
@@ -445,7 +503,9 @@ export default function BingoXGame() {
                                     <span className="font-black text-xl italic uppercase leading-none mb-1">Double JS</span>
                                     <span className="text-[10px] opacity-40 font-bold uppercase tracking-widest">Permanent 2x Points</span>
                                 </div>
-                                <button onClick={() => purchase(PRODUCT_DOUBLE_JS)} className="bg-primary text-black font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform">$4.99</button>
+                                <button onClick={() => purchase(PRODUCT_DOUBLE_JS)} disabled={!billingReady} className="bg-primary text-black font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform disabled:opacity-50">
+                                    {billingReady ? '$4.99' : 'Loading...'}
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -466,9 +526,9 @@ export default function BingoXGame() {
                              <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mb-6">Redeem points for real world money</p>
                              <div className="grid grid-cols-1 gap-2">
                                 {REWARDS.map(r => (
-                                    <div key={r.id} onClick={() => handlePayoutRequest(r)} className={cn("bg-black/40 border p-4 rounded-2xl flex justify-between items-center", (profile?.cash_balance || 0) >= r.jp ? "border-emerald-500/50" : "border-white/5 opacity-40")}>
+                                    <div key={r.id} onClick={() => handlePayoutRequest(r)} className={cn("bg-black/40 border p-4 rounded-2xl flex justify-between items-center", (profile?.jackpot_score || 0) >= r.jsCost ? "border-emerald-500/50" : "border-white/5 opacity-40")}>
                                         <span className="font-black italic uppercase text-xs">{r.name}</span>
-                                        <span className="text-[9px] font-bold">{r.jp.toLocaleString()} JS</span>
+                                        <span className="text-[9px] font-bold">{r.jsCost.toLocaleString()} JS</span>
                                     </div>
                                 ))}
                              </div>
@@ -480,7 +540,7 @@ export default function BingoXGame() {
                 )}
             </div>
 
-            <nav className="fixed bottom-0 left-0 right-0 h-24 bg-[#050510]/95 backdrop-blur-3xl border-t border-white/10 flex justify-around items-center px-4 pb-4 z-50">
+            <nav className="fixed bottom-14 left-0 right-0 h-20 bg-[#050510]/95 backdrop-blur-3xl border-t border-white/10 flex justify-around items-center px-4 z-50">
                 <NavButton icon={ShoppingBag} label="Store" active={activeTab === 'shop'} onClick={() => setActiveTab('shop')} />
                 <NavButton icon={Home} label="Play" active={activeTab === 'play'} onClick={() => setActiveTab('play')} />
                 <NavButton icon={Award} label="Wins" active={activeTab === 'payout'} onClick={() => setActiveTab('payout')} />

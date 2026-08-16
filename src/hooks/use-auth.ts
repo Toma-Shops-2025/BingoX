@@ -31,6 +31,7 @@ export function useAuth() {
                     id: userId,
                     username: username,
                     cash_balance: 0,
+                    jackpot_score: 0,
                     total_earned: 0
                 })
                 .select()
@@ -112,6 +113,32 @@ export function useAuth() {
     }
   }, [user, fetchProfile]);
 
+  const addJS = useCallback(async (amount: number) => {
+    if (!user) return;
+
+    try {
+        const { data: current } = await supabase
+            .from('profiles')
+            .select('jackpot_score, total_earned')
+            .eq('id', user.id)
+            .single();
+
+        const newScore = Math.max(0, (current?.jackpot_score || 0) + amount);
+        const newLifetime = (current?.total_earned || 0) + (amount > 0 ? amount : 0);
+
+        const { error } = await supabase.from('profiles').update({
+            jackpot_score: newScore,
+            total_earned: newLifetime,
+        }).eq('id', user.id);
+
+        if (error) throw error;
+        await fetchProfile(user.id);
+    } catch (e) {
+        console.error("JS sync failed", e);
+        throw e;
+    }
+  }, [user, fetchProfile]);
+
   const signIn = async (email: string, pass: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if (error) throw error;
@@ -131,5 +158,5 @@ export function useAuth() {
     await supabase.auth.signOut();
   };
 
-  return { user, profile, loading, signIn, signUp, signOut, addCash, supabase, fetchProfile };
+  return { user, profile, loading, signIn, signUp, signOut, addCash, addJS, supabase, fetchProfile };
 }
