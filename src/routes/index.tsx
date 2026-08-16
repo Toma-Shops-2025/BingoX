@@ -465,7 +465,7 @@ export default function BingoXGame() {
                              <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mb-6">Redeem points for real world money</p>
                              <div className="grid grid-cols-1 gap-2">
                                 {REWARDS.map(r => (
-                                    <div key={r.id} onClick={() => handlePayoutRequest(r)} className={cn("bg-black/40 border p-4 rounded-2xl flex justify-between items-center", (profile?.jackpot_score || 0) >= r.jp ? "border-emerald-500/50" : "border-white/5 opacity-40")}>
+                                    <div key={r.id} onClick={() => handlePayoutRequest(r)} className={cn("bg-black/40 border p-4 rounded-2xl flex justify-between items-center", (profile?.cash_balance || 0) >= r.jp ? "border-emerald-500/50" : "border-white/5 opacity-40")}>
                                         <span className="font-black italic uppercase text-xs">{r.name}</span>
                                         <span className="text-[9px] font-bold">{r.jp.toLocaleString()} JS</span>
                                     </div>
