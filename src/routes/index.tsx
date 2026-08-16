@@ -301,9 +301,14 @@ export default function BingoXGame() {
                             <button type="button" onClick={() => setShowPass(!showPass)}>{showPass ? <EyeOff className="h-4 w-4 opacity-30" /> : <Eye className="h-4 w-4 opacity-30" />}</button>
                         </div>
                         {!isLogin && (
-                            <div className="flex items-center gap-3 px-2 py-2">
-                                <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="accent-primary" />
-                                <span className="text-[10px] text-white/40 font-bold uppercase">18+ / Agree to Terms</span>
+                            <div className="flex items-start gap-3 px-2 py-2">
+                                <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="accent-primary mt-0.5" />
+                                <span className="text-[10px] text-white/40 font-bold uppercase leading-relaxed">
+                                    18+ / I agree to the{' '}
+                                    <a href="https://mybingox.fun/terms" target="_blank" rel="noopener noreferrer" className="text-primary underline">Terms</a>
+                                    {' '}and{' '}
+                                    <a href="https://mybingox.fun/privacy" target="_blank" rel="noopener noreferrer" className="text-primary underline">Privacy Policy</a>
+                                </span>
                             </div>
                         )}
                         <button type="submit" disabled={isSubmitting} className="w-full bg-primary py-5 rounded-3xl font-black uppercase tracking-widest shadow-glow mt-4 active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-2">
