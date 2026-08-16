@@ -324,13 +324,9 @@ export default function BingoXGame() {
 
     return (
         <div className="h-screen w-full bg-[#02020a] text-white font-sans flex flex-col items-center overflow-hidden relative">
-            <motion.div
-                className="absolute inset-0 z-0"
-                animate={{ scale: [1, 1.05, 1], opacity: [0.2, 0.4, 0.2] }}
-                transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-            >
-                <img src="/background.png" className="w-full h-full object-cover pointer-events-none" alt="" />
-            </motion.div>
+            <div className="absolute inset-0 z-0 animate-float-slow">
+                <img src="/background.png" className="w-full h-full object-cover pointer-events-none opacity-30" alt="" />
+            </div>
 
             <div className="flex-1 w-full max-w-md flex flex-col items-center z-10 overflow-y-auto px-4 pt-10 pb-32 no-scrollbar">
                 {activeTab === 'play' && (
