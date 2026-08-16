@@ -1,7 +1,7 @@
 # Bingo X - Build signed AAB for Google Play
-# Usage: cd Desktop\bingo-x ; .\build-aab.ps1
+# Usage: cd Desktop\BingoX ; .\build-aab.ps1
 
-$ProjectPath  = "$env:USERPROFILE\Desktop\bingo-x"
+$ProjectPath  = "$env:USERPROFILE\Desktop\BingoX"
 $KeystorePath = "C:\Keys\bingo-x.jks"
 $KeyAlias     = "alias"
 $AabPath      = "$ProjectPath\android\app\build\outputs\bundle\release\app-release.aab"

@@ -1,7 +1,7 @@
 # Bingo X - Build signed APK for Testing
 # Usage: cd Desktop\bingo-x ; .\build-apk.ps1
 
-$ProjectPath  = "$env:USERPROFILE\Desktop\bingo-x"
+$ProjectPath  = "$env:USERPROFILE\Desktop\BingoX"
 $KeystorePath = "C:\Keys\bingo-x.jks"
 $KeyAlias     = "alias"
 $ApkPath      = "$ProjectPath\android\app\build\outputs\apk\release\app-release.apk"
