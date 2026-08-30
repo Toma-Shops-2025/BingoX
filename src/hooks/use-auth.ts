@@ -30,7 +30,6 @@ export function useAuth() {
                 .insert({
                     id: userId,
                     username: username,
-                    cash_balance: 0,
                     jackpot_score: 0,
                     total_earned: 0
                 })
@@ -158,5 +157,23 @@ export function useAuth() {
     await supabase.auth.signOut();
   };
 
-  return { user, profile, loading, signIn, signUp, signOut, addCash, addJS, supabase, fetchProfile };
+  const activateDoubleJs = useCallback(async () => {
+    if (!user) return;
+
+    localStorage.setItem('bingox_double_js', '1');
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ has_double_js: true })
+      .eq('id', user.id);
+
+    if (error) {
+      console.warn('activateDoubleJs: profile update failed (run Supabase migration if needed)', error.message);
+    }
+
+    setProfile((prev: any) => (prev ? { ...prev, has_double_js: true } : prev));
+    await fetchProfile(user.id);
+  }, [user, fetchProfile]);
+
+  return { user, profile, loading, signIn, signUp, signOut, addCash, addJS, activateDoubleJs, supabase, fetchProfile };
 }

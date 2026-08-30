@@ -40,8 +40,12 @@ const REWARDS = [
 ];
 
 export default function BingoXGame() {
-    const { user, profile, loading, signIn, signUp, signOut, addJS, supabase } = useAuth()
-    const { purchase, isReady: billingReady } = useBilling()
+    const { user, profile, loading, signIn, signUp, signOut, addJS, activateDoubleJs, supabase } = useAuth()
+    const { purchase, isReady: billingReady, ownsDoubleJs } = useBilling(activateDoubleJs)
+
+    const hasDoubleJs = Boolean(profile?.has_double_js || ownsDoubleJs)
+    const jsMult = hasDoubleJs ? 2 : 1
+    const applyJs = useCallback((points: number) => Math.round(points * jsMult), [jsMult])
 
     const [activeTab, setActiveTab] = useState<'play' | 'shop' | 'payout' | 'catalog' | 'how_to_play'>('play')
     const [isMuted, setIsMuted] = useState(false)
@@ -133,20 +137,20 @@ export default function BingoXGame() {
             const key = p.join(',');
             if (!completedPatterns.includes(key)) {
                 setCompletedPatterns(prev => [...prev, key]);
-                extra += 500; // js points for session
+                extra += applyJs(500); // js points for session
                 triggered = true;
                 toast.success(`BINGO! +500 pts`, { icon: '🔥' });
             }
         });
 
         if (winResult.isXPattern && !hasAwardedX) {
-            extra += 1000;
+            extra += applyJs(1000);
             setHasAwardedX(true); triggered = true;
             toast.success(`X-PATTERN! +1,000 pts`, { icon: '💎', duration: 4000 });
         }
 
         if (winResult.isFullHouse && !hasAwardedFullHouse) {
-            extra += 5000;
+            extra += applyJs(5000);
             setHasAwardedFullHouse(true); triggered = true;
             toast.success(`FULL HOUSE! +5,000 pts`, { icon: '🏆', duration: 5000 });
             setTimeout(() => { endGame("FULL HOUSE"); }, 2000);
@@ -158,7 +162,7 @@ export default function BingoXGame() {
             setTimeout(() => setShowBingoCelebration(false), 3500);
             setSessionScore(prev => prev + extra);
         }
-    }, [completedPatterns, hasAwardedX, hasAwardedFullHouse]);
+    }, [completedPatterns, hasAwardedX, hasAwardedFullHouse, applyJs]);
 
     const pickNumber = useCallback(() => {
         if (gameOver || !isAutoPlaying || hasAwardedFullHouse || isPausedForAd) return;
@@ -273,8 +277,8 @@ export default function BingoXGame() {
 
     useEffect(() => {
         if (activeTab === 'payout' && supabase) {
-            supabase.from('profiles').select('username, cash_balance, total_earned')
-                .or('cash_balance.gt.0,total_earned.gt.0')
+            supabase.from('profiles').select('username, jackpot_score, total_earned')
+                .or('jackpot_score.gt.0,total_earned.gt.0')
                 .order('total_earned', { ascending: false }).limit(10)
                 .then(({ data }) => { if (data) setLeaderboard(data); });
         }
@@ -286,32 +290,40 @@ export default function BingoXGame() {
         if (cell.number === "FREE" || calledNumbers.includes(cell.number as number)) {
             if (cell.marked) return;
             const nb = [...board]; nb[r][c].marked = true; setBoard(nb);
-            let earned = 10 + Math.floor((100 - progress) * 0.5);
+            let earned = applyJs(10 + Math.floor((100 - progress) * 0.5));
             setSessionScore(prev => prev + earned);
             processWins(BingoEngine.checkWins(nb));
         }
     }
 
     const handlePayoutRequest = async (reward: typeof REWARDS[number]) => {
+        if (!user) {
+            toast.error("Please sign in to redeem rewards.");
+            return;
+        }
         const jsBalance = profile?.jackpot_score || 0;
-        if (jsBalance < reward.jsCost || isRedeeming) return;
+        if (jsBalance < reward.jsCost || isRedeeming) {
+            toast.error("Not enough JS for this reward.");
+            return;
+        }
         if (!confirm(`Redeem ${reward.name} for ${reward.jsCost.toLocaleString()} JS?`)) return;
         setIsRedeeming(true);
         try {
+            await addJS(-reward.jsCost);
             const { error } = await supabase.from('payout_requests').insert({
-                user_id: user?.id,
+                user_id: user.id,
                 reward_name: reward.name,
                 points_cost: reward.jsCost,
                 status: 'pending',
             });
             if (error) throw error;
-            await addJS(-reward.jsCost);
             toast.success("Redemption Submitted!", {
                 description: "Payouts are processed within 24–48 hours.",
             });
         } catch (e: any) {
             console.error(e);
-            toast.error("Redemption failed");
+            await addJS(reward.jsCost).catch(() => {});
+            toast.error(e?.message || "Redemption failed. Your JS was not deducted.");
         } finally {
             setIsRedeeming(false);
         }
@@ -518,8 +530,17 @@ export default function BingoXGame() {
                                     <span className="font-black text-xl italic uppercase leading-none mb-1">Double JS</span>
                                     <span className="text-[10px] opacity-40 font-bold uppercase tracking-widest">Permanent 2x Points</span>
                                 </div>
-                                <button onClick={() => purchase(PRODUCT_DOUBLE_JS)} disabled={!billingReady} className="bg-primary text-black font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform disabled:opacity-50">
-                                    {billingReady ? '$4.99' : 'Loading...'}
+                                <button
+                                    onClick={() => purchase(PRODUCT_DOUBLE_JS)}
+                                    disabled={!billingReady || hasDoubleJs}
+                                    className={cn(
+                                        "font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform disabled:opacity-50",
+                                        hasDoubleJs
+                                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                            : "bg-primary text-black",
+                                    )}
+                                >
+                                    {hasDoubleJs ? 'OWNED' : billingReady ? '$4.99' : 'Loading...'}
                                 </button>
                             </div>
                         </div>
@@ -645,9 +666,10 @@ export default function BingoXGame() {
     )
 }
 
-function NavButton({ icon: Icon, label, active, onClick }: { icon: any, label: string, active: boolean, onClick: () => void }) {
+function NavButton({ icon: Icon, label, active, onClick, accent }: { icon: any, label: string, active: boolean, onClick: () => void, accent?: 'cyan' }) {
+    const activeClass = accent === 'cyan' ? 'text-cyan-400' : 'text-primary';
     return (
-      <button onClick={onClick} className={cn("flex flex-col items-center justify-center gap-1 w-20 py-2 transition-all active:scale-90", active ? "text-primary scale-110" : "text-white/30")}>
+      <button onClick={onClick} className={cn("flex flex-col items-center justify-center gap-1 w-20 py-2 transition-all active:scale-90", active ? `${activeClass} scale-110` : "text-white/30")}>
         <Icon className={cn("h-6 w-6", active && "fill-current")} />
         <span className={cn("text-[8px] font-black uppercase tracking-widest", active ? "opacity-100" : "opacity-40")}>{label}</span>
       </button>
