@@ -9,7 +9,7 @@ import {
     Trophy, Zap, Pause, Play, Flame, Target, Star,
     History, ShoppingBag, Award, Home, User as UserIcon,
     CreditCard, Gift, Mail, Lock, Eye, EyeOff, ArrowLeft, Info, LogOut, Clock,
-    CheckCircle2, Loader2, Volume2, VolumeX, Sparkles, Coins
+    CheckCircle2, Loader2, Volume2, VolumeX, Sparkles, Coins, Wallet
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Capacitor } from '@capacitor/core'
@@ -24,11 +24,19 @@ const COLUMN_THEMES = {
 
 const GAME_TRACKS = ['game1.mp3', 'game2.mp3', 'game3.mp3', 'game4.mp3', 'game5.mp3', 'game6.mp3', 'game7.mp3', 'game8.mp3', 'game9.mp3', 'game10.mp3'];
 
+/** Background music level — 50% of device volume */
+const BGM_VOLUME = 0.5;
+
 const REWARDS = [
-    { id: 'v5', name: '$5 Visa Card', jsCost: 250_000, type: 'Visa' },
-    { id: 'a5', name: '$5 Amazon Gift', jsCost: 250_000, type: 'Amazon' },
-    { id: 'p5', name: '$5 PayPal Cash', jsCost: 250_000, type: 'PayPal' },
-    { id: 'v10', name: '$10 Visa Card', jsCost: 500_000, type: 'Visa' },
+    { id: 'v5', name: '$5 Visa Card', jsCost: 250_000, type: 'Visa' as const },
+    { id: 'a5', name: '$5 Amazon Gift', jsCost: 250_000, type: 'Amazon' as const },
+    { id: 'p5', name: '$5 PayPal Cash', jsCost: 250_000, type: 'PayPal' as const },
+    { id: 'v10', name: '$10 Visa Card', jsCost: 500_000, type: 'Visa' as const },
+    { id: 'a10', name: '$10 Amazon Gift', jsCost: 500_000, type: 'Amazon' as const },
+    { id: 'p10', name: '$10 PayPal Cash', jsCost: 500_000, type: 'PayPal' as const },
+    { id: 'v25', name: '$25 Visa Card', jsCost: 1_250_000, type: 'Visa' as const },
+    { id: 'a25', name: '$25 Amazon Gift', jsCost: 1_250_000, type: 'Amazon' as const },
+    { id: 'p25', name: '$25 PayPal Cash', jsCost: 1_250_000, type: 'PayPal' as const },
 ];
 
 export default function BingoXGame() {
@@ -57,6 +65,7 @@ export default function BingoXGame() {
     const [isPausedForAd, setIsPausedForAd] = useState(false)
     const wasAutoPlayingRef = useRef(false)
     const [leaderboard, setLeaderboard] = useState<any[]>([])
+    const [isRedeeming, setIsRedeeming] = useState(false)
 
     // Audio Refs
     const bgmRef = useRef<HTMLAudioElement | null>(null)
@@ -94,6 +103,7 @@ export default function BingoXGame() {
         if (!bgmRef.current) bgmRef.current = new Audio();
         bgmRef.current.loop = true;
         bgmRef.current.muted = isMuted;
+        bgmRef.current.volume = BGM_VOLUME;
         let track = "/audio/bgm/login.mp3";
         if (activeTab === 'play' && isAutoPlaying) {
             const randomGame = GAME_TRACKS[Math.floor(Math.random() * GAME_TRACKS.length)];
@@ -284,8 +294,9 @@ export default function BingoXGame() {
 
     const handlePayoutRequest = async (reward: typeof REWARDS[number]) => {
         const jsBalance = profile?.jackpot_score || 0;
-        if (jsBalance < reward.jsCost) return;
+        if (jsBalance < reward.jsCost || isRedeeming) return;
         if (!confirm(`Redeem ${reward.name} for ${reward.jsCost.toLocaleString()} JS?`)) return;
+        setIsRedeeming(true);
         try {
             const { error } = await supabase.from('payout_requests').insert({
                 user_id: user?.id,
@@ -295,10 +306,14 @@ export default function BingoXGame() {
             });
             if (error) throw error;
             await addJS(-reward.jsCost);
-            toast.success("Redemption Submitted!");
+            toast.success("Redemption Submitted!", {
+                description: "Payouts are processed within 24–48 hours.",
+            });
         } catch (e: any) {
             console.error(e);
             toast.error("Redemption failed");
+        } finally {
+            setIsRedeeming(false);
         }
     }
 
@@ -512,29 +527,91 @@ export default function BingoXGame() {
                 )}
 
                 {activeTab === 'payout' && (
-                    <div className="w-full py-8 animate-in slide-in-from-right duration-300 px-2 text-left">
-                        <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-emerald-400 text-center">Wins</h2>
-                        <div className="bg-gradient-to-br from-emerald-900 to-green-950 p-8 rounded-[50px] border-2 border-emerald-500/20 shadow-2xl relative overflow-hidden group mb-6">
-                             <div className="flex justify-between items-start">
-                                <Gift className="h-12 w-12 text-emerald-400 mb-4" />
-                                <div className="bg-black/40 px-4 py-2 rounded-2xl border border-white/10 text-right backdrop-blur-md">
-                                    <div className="text-[8px] uppercase font-black opacity-60 text-emerald-400">Account Bank</div>
-                                    <div className="text-xl font-black italic text-white">{(profile?.jackpot_score || 0).toLocaleString()} JS</div>
-                                </div>
-                             </div>
-                             <h3 className="text-2xl font-black uppercase italic leading-none mb-2">Jackpot Rewards</h3>
-                             <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mb-6">Redeem points for real world money</p>
-                             <div className="grid grid-cols-1 gap-2">
-                                {REWARDS.map(r => (
-                                    <div key={r.id} onClick={() => handlePayoutRequest(r)} className={cn("bg-black/40 border p-4 rounded-2xl flex justify-between items-center", (profile?.jackpot_score || 0) >= r.jsCost ? "border-emerald-500/50" : "border-white/5 opacity-40")}>
-                                        <span className="font-black italic uppercase text-xs">{r.name}</span>
-                                        <span className="text-[9px] font-bold">{r.jsCost.toLocaleString()} JS</span>
-                                    </div>
-                                ))}
-                             </div>
+                    <div className="w-full py-4 animate-in slide-in-from-right duration-300 text-left">
+                        <header className="px-2 pb-6 flex items-center gap-3">
+                            <h1 className="text-xl font-black uppercase italic tracking-tighter">
+                                THE <span className="text-cyan-400">JACKPOT VAULT</span>
+                            </h1>
+                        </header>
+
+                        <div className="bg-gradient-to-br from-[#111827] to-black border border-white/10 rounded-[2rem] p-8 text-center shadow-2xl relative overflow-hidden mb-6">
+                            <div className="absolute top-0 right-0 p-4 opacity-10">
+                                <Wallet className="w-24 h-24 rotate-12 text-cyan-400" />
+                            </div>
+                            <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] mb-1 italic">
+                                Total Jackpot Balance
+                            </p>
+                            <p className="text-6xl font-black tracking-tighter text-white tabular-nums italic">
+                                {(profile?.jackpot_score || 0).toLocaleString()}
+                            </p>
+                            <p className="text-[10px] text-cyan-400 font-bold mt-2 uppercase tracking-widest">
+                                JS · Redemption Ready
+                            </p>
                         </div>
-                        <div className="grid grid-cols-2 gap-4 mt-12 text-center">
-                            <button onClick={() => window.location.assign('mailto:support@bingox.fun')} className="bg-white/5 border border-white/10 py-4 rounded-2xl font-black uppercase text-[10px] text-primary col-span-2">Contact Support</button>
+
+                        <div className="space-y-3 px-1">
+                            <h3 className="text-[10px] font-black text-white/40 uppercase tracking-widest px-2 italic">
+                                Select Reward
+                            </h3>
+                            {REWARDS.map((r) => {
+                                const jsBalance = profile?.jackpot_score || 0;
+                                const isUnlocked = jsBalance >= r.jsCost;
+                                const Icon = r.type === 'PayPal' ? Wallet : CreditCard;
+                                const iconBg =
+                                    r.type === 'Amazon'
+                                        ? 'bg-primary'
+                                        : r.type === 'PayPal'
+                                          ? 'bg-emerald-600'
+                                          : 'bg-cyan-600';
+
+                                return (
+                                    <div
+                                        key={r.id}
+                                        className={cn(
+                                            "rounded-3xl border p-5 flex items-center justify-between transition-all",
+                                            isUnlocked
+                                                ? "border-cyan-400/30 bg-cyan-400/5"
+                                                : "border-white/5 bg-white/5 opacity-50",
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-4 text-left min-w-0">
+                                            <div className={cn("h-12 w-12 shrink-0 rounded-2xl flex items-center justify-center shadow-lg text-white", iconBg)}>
+                                                <Icon className="w-6 h-6" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <h4 className="font-black text-sm uppercase italic truncate">{r.name}</h4>
+                                                <p className="text-[10px] text-white/40 font-bold uppercase mt-0.5">
+                                                    {isUnlocked
+                                                        ? "Ready to claim"
+                                                        : `Unlock at ${r.jsCost.toLocaleString()} JS`}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        {isUnlocked ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => void handlePayoutRequest(r)}
+                                                disabled={isRedeeming}
+                                                className="shrink-0 bg-primary text-black text-[10px] font-black px-5 py-2.5 rounded-xl shadow-glow active:scale-95 transition-all italic disabled:opacity-50"
+                                            >
+                                                {isRedeeming ? "..." : "REDEEM"}
+                                            </button>
+                                        ) : (
+                                            <Lock className="w-4 h-4 text-white/20 shrink-0 mr-1" />
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <div className="flex flex-col items-center gap-4 pt-8 pb-4">
+                            <button
+                                type="button"
+                                onClick={() => window.location.assign('mailto:support@bingox.fun')}
+                                className="text-white/30 text-[10px] font-black uppercase tracking-widest underline italic"
+                            >
+                                Contact Support
+                            </button>
                         </div>
                     </div>
                 )}
@@ -543,7 +620,7 @@ export default function BingoXGame() {
             <nav className="fixed bottom-14 left-0 right-0 h-20 bg-[#050510]/95 backdrop-blur-3xl border-t border-white/10 flex justify-around items-center px-4 z-50">
                 <NavButton icon={ShoppingBag} label="Store" active={activeTab === 'shop'} onClick={() => setActiveTab('shop')} />
                 <NavButton icon={Home} label="Play" active={activeTab === 'play'} onClick={() => setActiveTab('play')} />
-                <NavButton icon={Award} label="Wins" active={activeTab === 'payout'} onClick={() => setActiveTab('payout')} />
+                <NavButton icon={Award} label="Wins" active={activeTab === 'payout'} accent="cyan" onClick={() => setActiveTab('payout')} />
             </nav>
 
             {showBingoCelebration && (
