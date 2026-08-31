@@ -440,7 +440,7 @@ export default function BingoXGame() {
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.06),transparent_65%)]" />
             </div>
 
-            <div className="flex-1 w-full max-w-md flex flex-col items-center z-10 overflow-y-auto px-4 pt-10 pb-40 no-scrollbar">
+            <div className="flex-1 w-full max-w-md flex flex-col items-center z-10 overflow-y-auto px-4 pt-10 pb-32 no-scrollbar">
                 {activeTab === 'play' && (
                     <>
                         <div className="w-full flex justify-between items-start mb-6 px-2 text-left">
@@ -523,23 +523,23 @@ export default function BingoXGame() {
                             </div>
                         </div>
 
-                        <div className="flex gap-4 w-full px-4 mb-4">
+                        <div className="flex gap-3 w-full px-2 mb-2">
                             <button
                                 onClick={handleLuckyDaub}
                                 disabled={isProcessing}
-                                className="flex-1 py-4 bg-purple-600/20 border-2 border-purple-500/40 rounded-3xl flex items-center justify-center gap-2 font-black italic uppercase text-xs active:scale-95 transition-all disabled:opacity-50"
+                                className="flex-1 py-3 bg-purple-600/20 border-2 border-purple-500/40 rounded-2xl flex items-center justify-center gap-2 font-black italic uppercase text-[10px] active:scale-95 transition-all disabled:opacity-50"
                             >
-                                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-purple-400" />}
+                                {isProcessing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 text-purple-400" />}
                                 Lucky Daub
                             </button>
                             <button
                                 onClick={() => setIsAutoPlaying(!isAutoPlaying)}
                                 className={cn(
-                                    "flex-[2] py-4 rounded-[30px] font-black uppercase tracking-[0.2em] transition-all active:scale-95 flex items-center justify-center gap-3 shadow-glow",
+                                    "flex-[2] py-3 rounded-2xl font-black uppercase tracking-[0.15em] transition-all active:scale-95 flex items-center justify-center gap-2 shadow-glow text-xs",
                                     isAutoPlaying ? "bg-white/5 border-2 border-white/10 text-white" : "bg-primary text-black"
                                 )}
                             >
-                                {isAutoPlaying ? <Pause className="fill-current h-5 w-5" /> : <Play className="fill-current h-5 w-5" />}
+                                {isAutoPlaying ? <Pause className="fill-current h-4 w-4" /> : <Play className="fill-current h-4 w-4" />}
                                 {isAutoPlaying ? "Pause" : "Call Numbers"}
                             </button>
                         </div>
@@ -671,17 +671,17 @@ export default function BingoXGame() {
                 )}
             </div>
 
-            <div className="fixed bottom-[8.75rem] left-3 right-3 z-[55] flex items-center gap-3 bg-[#050510]/95 border border-primary/30 rounded-2xl px-4 py-3 backdrop-blur-xl shadow-[0_0_24px_rgba(255,69,0,0.15)]">
+            <div className="fixed bottom-[6.75rem] left-2 right-2 z-[55] flex items-center gap-2 bg-[#050510]/95 border border-primary/30 rounded-xl px-3 py-1.5 backdrop-blur-xl shadow-[0_0_16px_rgba(255,69,0,0.12)]">
                 <button
                     type="button"
                     onClick={() => setIsMuted((m) => !m)}
                     aria-label={isMuted ? 'Unmute' : 'Mute'}
                     className={cn(
-                        "shrink-0 p-2.5 rounded-xl border active:scale-95 transition-transform",
+                        "shrink-0 p-1.5 rounded-lg border active:scale-95 transition-transform",
                         isMuted ? "bg-white/5 border-white/10" : "bg-primary/20 border-primary/50",
                     )}
                 >
-                    {isMuted ? <VolumeX className="h-6 w-6 text-white/40" /> : <Volume2 className="h-6 w-6 text-primary" />}
+                    {isMuted ? <VolumeX className="h-4 w-4 text-white/40" /> : <Volume2 className="h-4 w-4 text-primary" />}
                 </button>
                 <input
                     type="range"
@@ -693,15 +693,15 @@ export default function BingoXGame() {
                         setVolume(next);
                         if (next > 0 && isMuted) setIsMuted(false);
                     }}
-                    className="flex-1 h-2 accent-primary cursor-pointer"
+                    className="flex-1 h-1 accent-primary cursor-pointer min-w-0"
                     aria-label="Volume"
                 />
-                <span className="text-[11px] font-black text-primary w-8 text-right tabular-nums">
+                <span className="text-[9px] font-black text-primary w-6 text-right tabular-nums shrink-0">
                     {isMuted ? 0 : Math.round(volume * 100)}
                 </span>
             </div>
 
-            <nav className="fixed bottom-14 left-0 right-0 h-20 bg-[#050510]/95 backdrop-blur-3xl border-t border-white/10 flex justify-around items-center px-4 z-50">
+            <nav className="fixed bottom-14 left-0 right-0 h-14 bg-[#050510]/95 backdrop-blur-3xl border-t border-white/10 flex justify-around items-center px-2 z-50">
                 <NavButton icon={ShoppingBag} label="Store" active={activeTab === 'shop'} onClick={() => setActiveTab('shop')} />
                 <NavButton icon={Home} label="Play" active={activeTab === 'play'} onClick={() => setActiveTab('play')} />
                 <NavButton icon={Award} label="Wins" active={activeTab === 'payout'} accent="cyan" onClick={() => setActiveTab('payout')} />
@@ -732,9 +732,9 @@ export default function BingoXGame() {
 function NavButton({ icon: Icon, label, active, onClick, accent }: { icon: any, label: string, active: boolean, onClick: () => void, accent?: 'cyan' }) {
     const activeClass = accent === 'cyan' ? 'text-cyan-400' : 'text-primary';
     return (
-      <button onClick={onClick} className={cn("flex flex-col items-center justify-center gap-1 w-20 py-2 transition-all active:scale-90", active ? `${activeClass} scale-110` : "text-white/30")}>
-        <Icon className={cn("h-6 w-6", active && "fill-current")} />
-        <span className={cn("text-[8px] font-black uppercase tracking-widest", active ? "opacity-100" : "opacity-40")}>{label}</span>
+      <button onClick={onClick} className={cn("flex flex-col items-center justify-center gap-0.5 w-16 py-1 transition-all active:scale-90", active ? `${activeClass} scale-105` : "text-white/30")}>
+        <Icon className={cn("h-5 w-5", active && "fill-current")} />
+        <span className={cn("text-[7px] font-black uppercase tracking-widest", active ? "opacity-100" : "opacity-40")}>{label}</span>
       </button>
     );
 }
