@@ -24,8 +24,9 @@ const COLUMN_THEMES = {
 
 const GAME_TRACKS = ['game1.mp3', 'game2.mp3', 'game3.mp3', 'game4.mp3', 'game5.mp3', 'game6.mp3', 'game7.mp3', 'game8.mp3', 'game9.mp3', 'game10.mp3'];
 
-/** Background music level — 50% of device volume */
-const BGM_VOLUME = 0.5;
+/** Default music/SFX level — 25% of device volume */
+const DEFAULT_VOLUME = 0.25;
+const VOLUME_STORAGE_KEY = 'bingox_volume';
 
 const REWARDS = [
     { id: 'v5', name: '$5 Visa Card', jsCost: 250_000, type: 'Visa' as const },
@@ -41,13 +42,22 @@ const REWARDS = [
 
 export default function BingoXGame() {
     const { user, profile, loading, signIn, signUp, signOut, addJS, activateDoubleJs, supabase } = useAuth()
-    const { purchase, isReady: billingReady, ownsDoubleJs } = useBilling(activateDoubleJs)
+    const { purchase, isReady: billingReady, ownsDoubleJs, isPurchasing } = useBilling(activateDoubleJs)
 
     const hasDoubleJs = Boolean(profile?.has_double_js || ownsDoubleJs)
     const jsMult = hasDoubleJs ? 2 : 1
     const applyJs = useCallback((points: number) => Math.round(points * jsMult), [jsMult])
 
     const [activeTab, setActiveTab] = useState<'play' | 'shop' | 'payout' | 'catalog' | 'how_to_play'>('play')
+    const [volume, setVolume] = useState(() => {
+        if (typeof window === 'undefined') return DEFAULT_VOLUME;
+        const saved = localStorage.getItem(VOLUME_STORAGE_KEY);
+        if (saved != null) {
+            const parsed = parseFloat(saved);
+            if (!Number.isNaN(parsed)) return Math.min(1, Math.max(0, parsed));
+        }
+        return DEFAULT_VOLUME;
+    })
     const [isMuted, setIsMuted] = useState(false)
     const [showBingoCelebration, setShowBingoCelebration] = useState(false)
 
@@ -76,6 +86,7 @@ export default function BingoXGame() {
     const callerRef = useRef<HTMLAudioElement | null>(null)
     const isMutedRef = useRef(false)
     const isPausedForAdRef = useRef(false)
+    const volumeRef = useRef(DEFAULT_VOLUME)
 
     const pauseGameForAd = useCallback(() => {
         isPausedForAdRef.current = true
@@ -103,11 +114,20 @@ export default function BingoXGame() {
     useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
     useEffect(() => {
+        volumeRef.current = isMuted ? 0 : volume;
+        localStorage.setItem(VOLUME_STORAGE_KEY, String(volume));
+        if (bgmRef.current) {
+            bgmRef.current.muted = isMuted;
+            bgmRef.current.volume = isMuted ? 0 : volume;
+        }
+    }, [volume, isMuted]);
+
+    useEffect(() => {
         if (!user || isPausedForAd) return;
         if (!bgmRef.current) bgmRef.current = new Audio();
         bgmRef.current.loop = true;
         bgmRef.current.muted = isMuted;
-        bgmRef.current.volume = BGM_VOLUME;
+        bgmRef.current.volume = isMuted ? 0 : volume;
         let track = "/audio/bgm/login.mp3";
         if (activeTab === 'play' && isAutoPlaying) {
             const randomGame = GAME_TRACKS[Math.floor(Math.random() * GAME_TRACKS.length)];
@@ -117,7 +137,14 @@ export default function BingoXGame() {
             bgmRef.current.src = track;
             bgmRef.current.play().catch(() => {});
         }
-    }, [user, activeTab, isAutoPlaying, isMuted, roundCounter, isPausedForAd]);
+    }, [user, activeTab, isAutoPlaying, isMuted, volume, roundCounter, isPausedForAd]);
+
+    const playSfx = useCallback((src: string) => {
+        if (isMutedRef.current || isPausedForAdRef.current) return;
+        const audio = new Audio(src);
+        audio.volume = volumeRef.current;
+        audio.play().catch(() => {});
+    }, []);
 
     const playCall = useCallback((num: number) => {
         if (isMutedRef.current || isPausedForAdRef.current) return;
@@ -125,6 +152,7 @@ export default function BingoXGame() {
         let prefix = num <= 15 ? "B" : num <= 30 ? "I" : num <= 45 ? "N" : num <= 60 ? "G" : "O";
         const audio = new Audio(`/audio/calls/${prefix}-${num}.MP3`);
         audio.muted = isMutedRef.current;
+        audio.volume = volumeRef.current;
         callerRef.current = audio;
         audio.play().catch(() => {});
     }, []);
@@ -157,12 +185,12 @@ export default function BingoXGame() {
         }
 
         if (triggered) {
-            new Audio('/audio/sfx/bingo.mp3').play().catch(() => {});
+            playSfx('/audio/sfx/bingo.mp3');
             setShowBingoCelebration(true);
             setTimeout(() => setShowBingoCelebration(false), 3500);
             setSessionScore(prev => prev + extra);
         }
-    }, [completedPatterns, hasAwardedX, hasAwardedFullHouse, applyJs]);
+    }, [completedPatterns, hasAwardedX, hasAwardedFullHouse, applyJs, playSfx]);
 
     const pickNumber = useCallback(() => {
         if (gameOver || !isAutoPlaying || hasAwardedFullHouse || isPausedForAd) return;
@@ -417,9 +445,6 @@ export default function BingoXGame() {
                     <>
                         <div className="w-full flex justify-between items-start mb-6 px-2 text-left">
                             <div className="flex flex-col gap-2">
-                                <button onClick={() => setIsMuted(!isMuted)} className="p-3 bg-white/5 backdrop-blur-md rounded-xl border border-white/10 active:scale-90">
-                                    {isMuted ? <VolumeX className="h-5 w-5 text-white/40" /> : <Volume2 className="h-5 w-5 text-primary" />}
-                                </button>
                                 <button onClick={() => signOut()} className="p-3 bg-white/5 backdrop-blur-md rounded-xl border border-white/10 active:scale-90 text-red-500">
                                     <LogOut className="h-5 w-5" />
                                 </button>
@@ -525,23 +550,31 @@ export default function BingoXGame() {
                     <div className="w-full py-8 animate-in slide-in-from-right duration-300">
                         <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-8 text-cyan-400 text-center">Store</h2>
                         <div className="space-y-4 px-2">
-                            <div className="bg-white/5 border border-white/10 p-6 rounded-[40px] flex justify-between items-center shadow-xl text-left">
-                                <div className="flex flex-col">
-                                    <span className="font-black text-xl italic uppercase leading-none mb-1">Double JS</span>
-                                    <span className="text-[10px] opacity-40 font-bold uppercase tracking-widest">Permanent 2x Points</span>
+                            <div className="bg-white/5 border border-white/10 p-6 rounded-[40px] shadow-xl text-left">
+                                <div className="flex justify-between items-center">
+                                    <div className="flex flex-col">
+                                        <span className="font-black text-xl italic uppercase leading-none mb-1">Double JS</span>
+                                        <span className="text-[10px] opacity-40 font-bold uppercase tracking-widest">Permanent 2x Points</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => void purchase(PRODUCT_DOUBLE_JS)}
+                                        disabled={hasDoubleJs || isPurchasing}
+                                        className={cn(
+                                            "font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform disabled:opacity-50 min-w-[88px]",
+                                            hasDoubleJs
+                                                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                                : "bg-primary text-black",
+                                        )}
+                                    >
+                                        {hasDoubleJs ? 'OWNED' : isPurchasing ? '...' : '$4.99'}
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={() => purchase(PRODUCT_DOUBLE_JS)}
-                                    disabled={!billingReady || hasDoubleJs}
-                                    className={cn(
-                                        "font-black px-6 py-3 rounded-2xl shadow-glow active:scale-95 transition-transform disabled:opacity-50",
-                                        hasDoubleJs
-                                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                                            : "bg-primary text-black",
-                                    )}
-                                >
-                                    {hasDoubleJs ? 'OWNED' : billingReady ? '$4.99' : 'Loading...'}
-                                </button>
+                                {!billingReady && !hasDoubleJs && (
+                                    <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest mt-3 text-right">
+                                        Tap $4.99 to connect Play Store
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -636,6 +669,36 @@ export default function BingoXGame() {
                         </div>
                     </div>
                 )}
+            </div>
+
+            <div className="fixed bottom-[8.75rem] left-3 right-3 z-[55] flex items-center gap-3 bg-[#050510]/95 border border-primary/30 rounded-2xl px-4 py-3 backdrop-blur-xl shadow-[0_0_24px_rgba(255,69,0,0.15)]">
+                <button
+                    type="button"
+                    onClick={() => setIsMuted((m) => !m)}
+                    aria-label={isMuted ? 'Unmute' : 'Mute'}
+                    className={cn(
+                        "shrink-0 p-2.5 rounded-xl border active:scale-95 transition-transform",
+                        isMuted ? "bg-white/5 border-white/10" : "bg-primary/20 border-primary/50",
+                    )}
+                >
+                    {isMuted ? <VolumeX className="h-6 w-6 text-white/40" /> : <Volume2 className="h-6 w-6 text-primary" />}
+                </button>
+                <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={Math.round(volume * 100)}
+                    onChange={(e) => {
+                        const next = Number(e.target.value) / 100;
+                        setVolume(next);
+                        if (next > 0 && isMuted) setIsMuted(false);
+                    }}
+                    className="flex-1 h-2 accent-primary cursor-pointer"
+                    aria-label="Volume"
+                />
+                <span className="text-[11px] font-black text-primary w-8 text-right tabular-nums">
+                    {isMuted ? 0 : Math.round(volume * 100)}
+                </span>
             </div>
 
             <nav className="fixed bottom-14 left-0 right-0 h-20 bg-[#050510]/95 backdrop-blur-3xl border-t border-white/10 flex justify-around items-center px-4 z-50">
