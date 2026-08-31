@@ -81,17 +81,21 @@ export function useBilling(onPurchased?: () => void | Promise<void>) {
         platform: CdvPurchase.Platform.GOOGLE_PLAY,
       });
 
-      store.when().approved((tx) => {
+      store.when().approved((tx: { productId: string; verify: () => void; finish: () => void }) => {
         if (tx.productId === PRODUCT_DOUBLE_JS) {
           void markOwned().then(() => {
             toast.success('DOUBLE JS ACTIVATED FOREVER!');
           });
         }
+        // Finish acknowledges the purchase with Google Play (no server validator needed).
         tx.verify();
+        tx.finish();
       });
 
       store.when().verified((receipt) => receipt.finish());
-      store.when().unverified(() => toast.error('Purchase could not be verified'));
+      store.when().unverified(() => {
+        console.warn('Billing: purchase unverified (ownership still saved if approved fired)');
+      });
 
       store.ready(() => {
         console.log('Billing: Store is ready');
