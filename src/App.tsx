@@ -7,11 +7,10 @@ function App() {
   console.log("App: Launching Bingo X Hub v2.1");
 
   useEffect(() => {
-    // Initialize Edge-to-Edge for Bingo X
-    if (Capacitor.isNativePlatform()) {
+    if (Capacitor.getPlatform() === 'android') {
       import('@capawesome/capacitor-android-edge-to-edge-support').then(({ EdgeToEdge }) => {
-        EdgeToEdge.setBackgroundColor({ color: '#00000000' }).catch(err => console.error("EdgeToEdge failed", err));
-      }).catch(err => console.error("EdgeToEdge import failed", err));
+        EdgeToEdge.enable().catch((err) => console.error('EdgeToEdge.enable failed', err));
+      }).catch((err) => console.error('EdgeToEdge import failed', err));
     }
   }, []);
 
